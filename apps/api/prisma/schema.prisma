@@ -1,0 +1,832 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  TEAM_LEADER
+  CALL_CENTER_AGENT
+  FOLLOWUP_AGENT
+  CLIENT_ADMIN
+  CLIENT_USER
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum OrderStatus {
+  NEW
+  ASSIGNED
+  IN_PROGRESS
+  CONFIRMED
+  CANCELLED
+  SHIPPED
+  DELIVERED
+  RETURNED
+}
+
+enum AssignmentMethod {
+  ROUND_ROBIN
+  PRODUCT_BASED
+  STORE_BASED
+  ONLINE_PRIORITY
+  MANUAL
+}
+
+enum CommunicationChannel {
+  PHONE
+  SMS
+  EMAIL
+  OTHER
+}
+
+enum PaymentMethod {
+  COD
+  CREDIT_CARD
+  BANK_TRANSFER
+  CASH
+  OTHER
+}
+
+enum Currency {
+  MAD
+  EUR
+  USD
+}
+
+enum ProductType {
+  SIMPLE
+  PACK
+}
+
+enum PlatformType {
+  YOUCAN
+  SHOPIFY
+  GOOGLE_SHEETS
+  MANUAL
+}
+
+enum ConnectionStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+  ERROR
+}
+
+// ==================== USER & AUTH MODELS ====================
+
+model User {
+  id                    String          @id @default(cuid())
+  email                 String          @unique
+  username              String          @unique
+  password              String
+  firstName             String
+  lastName              String
+  phone                 String?
+  avatar                String?
+  
+  role                  UserRole
+  status                UserStatus      @default(PENDING)
+  
+  // Online status
+  isOnline              Boolean         @default(false)
+  lastActiveAt          DateTime?
+  
+  // Organization relationship
+  organizationId        String?
+  organization          Organization?   @relation(fields: [organizationId], references: [id])
+  
+  // Team relationships
+  leadingTeams          Team[]          @relation("TeamLeader")
+  teamMemberships       TeamMember[]
+  
+  // Work relationships
+  assignedOrders        Order[]         @relation("AssignedAgent")
+  orderActivities       OrderActivity[]
+  callLogs              CallLog[]
+  
+  // Auth relationships
+  sessions              Session[]
+  
+  // Platform connections
+  platformConnections   PlatformConnection[]
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  deletedAt             DateTime?
+  
+  @@index([email])
+  @@index([organizationId])
+  @@index([role])
+  @@index([status])
+}
+
+model Session {
+  id                    String          @id @default(cuid())
+  sessionToken          String          @unique
+  userId                String
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  expiresAt             DateTime
+  ipAddress             String?
+  userAgent             String?
+  
+  createdAt             DateTime        @default(now())
+  
+  @@index([userId])
+}
+
+// ==================== PLATFORM CONNECTION MODELS ====================
+
+model PlatformConnection {
+  id                    String          @id @default(cuid())
+  
+  // Connection details
+  platformType          PlatformType
+  platformName          String          // "My Youcan Store", "Main Google Sheet", etc.
+  status                ConnectionStatus @default(ACTIVE)
+  
+  // OAuth2 credentials (encrypted)
+  accessToken           String?         // Encrypted
+  refreshToken          String?         // Encrypted
+  tokenExpiresAt        DateTime?
+  
+  // Platform-specific data
+  platformUserId        String?         // User ID on the platform
+  platformStoreId       String?         // Store ID for e-commerce platforms
+  platformData          Json?           // Additional platform-specific data
+  
+  // Scopes and permissions
+  scopes                String[]        // OAuth2 scopes granted
+  
+  // Owner and organization
+  userId                String
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  organizationId        String
+  organization          Organization    @relation(fields: [organizationId], references: [id])
+  
+  // Connection metadata
+  lastSyncAt            DateTime?
+  lastErrorAt           DateTime?
+  lastErrorMessage      String?
+  syncCount             Int             @default(0)
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  
+  @@unique([userId, platformType, platformStoreId])
+  @@index([organizationId])
+  @@index([status])
+  @@index([platformType])
+}
+
+// ==================== ORGANIZATION & TEAM MODELS ====================
+
+model Organization {
+  id                    String          @id @default(cuid())
+  name                  String
+  code                  String          @unique
+  logo                  String?
+  website               String?
+  phone                 String?
+  email                 String
+  address               String?
+  city                  String?
+  country               String          @default("MA")
+  
+  // Settings
+  timezone              String          @default("Africa/Casablanca")
+  currency              Currency        @default(MAD)
+  
+  // Billing info
+  taxId                 String?
+  billingEmail          String?
+  
+  // Relationships
+  users                 User[]
+  teams                 Team[]
+  stores                Store[]
+  products              Product[]
+  productCategories     ProductCategory[]
+  orders                Order[]
+  customers             Customer[]
+  callStatuses          CallStatus[]
+  shippingCompanies     ShippingCompany[]
+  platformConnections   PlatformConnection[]
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  deletedAt             DateTime?
+  
+  @@index([code])
+}
+
+model Team {
+  id                    String          @id @default(cuid())
+  name                  String
+  description           String?
+  
+  organizationId        String
+  organization          Organization    @relation(fields: [organizationId], references: [id])
+  
+  leaderId              String
+  leader                User            @relation("TeamLeader", fields: [leaderId], references: [id])
+  
+  // Relationships
+  members               TeamMember[]
+  storeAssignments      TeamStore[]
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  deletedAt             DateTime?
+  
+  @@index([organizationId])
+  @@index([leaderId])
+}
+
+model TeamMember {
+  id                    String          @id @default(cuid())
+  
+  teamId                String
+  team                  Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  
+  userId                String
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  joinedAt              DateTime        @default(now())
+  leftAt                DateTime?
+  
+  @@unique([teamId, userId])
+}
+
+model Store {
+  id                    String          @id @default(cuid())
+  name                  String
+  code                  String
+  description           String?
+  
+  // Contact
+  email                 String?
+  phone                 String?
+  address               String?
+  city                  String?
+  
+  organizationId        String
+  organization          Organization    @relation(fields: [organizationId], references: [id])
+  
+  // Relationships
+  orders                Order[]
+  teamAssignments       TeamStore[]
+  
+  // Settings
+  isActive              Boolean         @default(true)
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  deletedAt             DateTime?
+  
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+model TeamStore {
+  id                    String          @id @default(cuid())
+  
+  teamId                String
+  team                  Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  
+  storeId               String
+  store                 Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  assignedAt            DateTime        @default(now())
+  
+  @@unique([teamId, storeId])
+}
+
+// ==================== PRODUCT MODELS ====================
+
+model ProductCategory {
+  id                    String          @id @default(cuid())
+  name                  String
+  description           String?
+  
+  organizationId        String
+  organization          Organization    @relation(fields: [organizationId], references: [id])
+  
+  // Self-referencing for subcategories
+  parentId              String?
+  parent                ProductCategory? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children              ProductCategory[] @relation("CategoryHierarchy")
+  
+  // Relationships
+  products              Product[]
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  
+  @@index([organizationId])
+  @@index([parentId])
+}
+
+model Product {
+  id                    String          @id @default(cuid())
+  name                  String
+  description           String?
+  type                  ProductType     @default(SIMPLE)
+  
+  // Identifiers
+  sku                   String?
+  barcode               String?
+  
+  // Pricing
+  price                 Decimal         @db.Decimal(10, 2)
+  cost                  Decimal?        @db.Decimal(10, 2)
+  currency              Currency        @default(MAD)
+  
+  // Physical attributes
+  weight                Decimal?        @db.Decimal(10, 3)
+  dimensions            Json?           // {length, width, height}
+  
+  // Images
+  images                String[]
+  
+  organizationId        String
+  organization          Organization    @relation(fields: [organizationId], references: [id])
+  
+  categoryId            String?
+  category              ProductCategory? @relation(fields: [categoryId], references: [id])
+  
+  // Shipping references for different companies
+  shippingRefs          ProductShippingRef[]
+  
+  // Pack relationships
+  packItems             PackItem[]      @relation("PackProduct")
+  includedInPacks       PackItem[]      @relation("IncludedProduct")
+  
+  // Order relationships
+  orderItems            OrderItem[]
+  
+  // Stock
+  stockQuantity         Int             @default(0)
+  lowStockAlert         Int             @default(10)
+  
+  // Status
+  isActive              Boolean         @default(true)
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  deletedAt             DateTime?
+  
+  @@unique([organizationId, sku])
+  @@index([organizationId])
+  @@index([categoryId])
+}
+
+model PackItem {
+  id                    String          @id @default(cuid())
+  
+  // The pack product
+  packId                String
+  pack                  Product         @relation("PackProduct", fields: [packId], references: [id], onDelete: Cascade)
+  
+  // The included product
+  productId             String
+  product               Product         @relation("IncludedProduct", fields: [productId], references: [id])
+  
+  quantity              Int             @default(1)
+  
+  @@unique([packId, productId])
+}
+
+model ProductShippingRef {
+  id                    String          @id @default(cuid())
+  
+  productId             String
+  product               Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  shippingCompanyId     String
+  shippingCompany       ShippingCompany @relation(fields: [shippingCompanyId], references: [id])
+  
+  // Reference code for this product at the shipping company
+  referenceCode         String
+  
+  // Additional shipping info
+  shippingCategory      String?
+  specialHandling       String?
+  
+  @@unique([productId, shippingCompanyId])
+  @@index([shippingCompanyId])
+}
+
+// ==================== CUSTOMER MODELS ====================
+
+model Customer {
+  id                    String          @id @default(cuid())
+  
+  // Personal info
+  firstName             String
+  lastName              String
+  phone                 String
+  alternatePhone        String?
+  email                 String?
+  
+  // Address
+  address               String?
+  city                  String?
+  postalCode            String?
+  
+  // Preferences
+  preferredChannel      CommunicationChannel @default(PHONE)
+  notes                 String?
+  
+  organizationId        String
+  organization          Organization    @relation(fields: [organizationId], references: [id])
+  
+  // Relationships
+  orders                Order[]
+  callLogs              CallLog[]
+  
+  // Stats
+  totalOrders           Int             @default(0)
+  confirmedOrders       Int             @default(0)
+  cancelledOrders       Int             @default(0)
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  
+  @@unique([organizationId, phone])
+  @@index([organizationId])
+  @@index([phone])
+}
+
+// ==================== ORDER MODELS ====================
+
+model Order {
+  id                    String          @id @default(cuid())
+  orderNumber           String          @unique
+  externalOrderId       String?         // ID from source system
+  
+  // Status
+  status                OrderStatus     @default(NEW)
+  subStatus             String?         // For custom statuses
+  
+  // Organization & Store
+  organizationId        String
+  organization          Organization    @relation(fields: [organizationId], references: [id])
+  
+  storeId               String
+  store                 Store           @relation(fields: [storeId], references: [id])
+  
+  // Customer
+  customerId            String
+  customer              Customer        @relation(fields: [customerId], references: [id])
+  
+  // Assignment
+  assignedAgentId       String?
+  assignedAgent         User?           @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  assignedAt            DateTime?
+  assignmentMethod      AssignmentMethod?
+  
+  // Dates
+  orderDate             DateTime        @default(now())
+  confirmationDate      DateTime?
+  shippingDate          DateTime?
+  deliveryDate          DateTime?
+  
+  // Shipping details
+  shippingAddress       String
+  shippingCity          String
+  shippingPostalCode    String?
+  shippingPhone         String?
+  
+  // Financial
+  subtotal              Decimal         @db.Decimal(10, 2)
+  shippingCost          Decimal         @db.Decimal(10, 2) @default(0)
+  tax                   Decimal         @db.Decimal(10, 2) @default(0)
+  discount              Decimal         @db.Decimal(10, 2) @default(0)
+  total                 Decimal         @db.Decimal(10, 2)
+  currency              Currency        @default(MAD)
+  
+  paymentMethod         PaymentMethod   @default(COD)
+  isPaid                Boolean         @default(false)
+  
+  // Additional info
+  notes                 String?
+  tags                  String[]
+  metadata              Json?
+  
+  // Relationships
+  items                 OrderItem[]
+  activities            OrderActivity[]
+  callLogs              CallLog[]
+  shipment              Shipment?
+  
+  // Source tracking
+  source                String?         // google_sheets, api, manual, etc.
+  importedAt            DateTime?
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  cancelledAt           DateTime?
+  
+  @@index([organizationId])
+  @@index([storeId])
+  @@index([customerId])
+  @@index([assignedAgentId])
+  @@index([status])
+  @@index([orderDate])
+}
+
+model OrderItem {
+  id                    String          @id @default(cuid())
+  
+  orderId               String
+  order                 Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  productId             String
+  product               Product         @relation(fields: [productId], references: [id])
+  
+  quantity              Int
+  unitPrice             Decimal         @db.Decimal(10, 2)
+  total                 Decimal         @db.Decimal(10, 2)
+  
+  // For tracking modifications
+  originalQuantity      Int?
+  originalPrice         Decimal?        @db.Decimal(10, 2)
+  
+  notes                 String?
+  
+  @@index([orderId])
+  @@index([productId])
+}
+
+model OrderActivity {
+  id                    String          @id @default(cuid())
+  
+  orderId               String
+  order                 Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  userId                String
+  user                  User            @relation(fields: [userId], references: [id])
+  
+  action                String          // status_changed, note_added, item_modified, etc.
+  description           String
+  
+  // For status changes
+  previousValue         String?
+  newValue              String?
+  
+  metadata              Json?
+  
+  createdAt             DateTime        @default(now())
+  
+  @@index([orderId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ==================== CALL & COMMUNICATION MODELS ====================
+
+model CallStatus {
+  id                    String          @id @default(cuid())
+  name                  String
+  code                  String
+  description           String?
+  color                 String?         // For UI display
+  
+  organizationId        String
+  organization          Organization    @relation(fields: [organizationId], references: [id])
+  
+  // Behavior flags
+  isSuccess             Boolean         @default(false)
+  requiresFollowup      Boolean         @default(false)
+  countsAsAttempt       Boolean         @default(true)
+  
+  // Order
+  displayOrder          Int             @default(0)
+  
+  // Relationships
+  callLogs              CallLog[]
+  
+  // Status
+  isActive              Boolean         @default(true)
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+model CallLog {
+  id                    String          @id @default(cuid())
+  
+  orderId               String
+  order                 Order           @relation(fields: [orderId], references: [id])
+  
+  customerId            String
+  customer              Customer        @relation(fields: [customerId], references: [id])
+  
+  agentId               String
+  agent                 User            @relation(fields: [agentId], references: [id])
+  
+  callStatusId          String
+  callStatus            CallStatus      @relation(fields: [callStatusId], references: [id])
+  
+  // Call details
+  channel               CommunicationChannel
+  startTime             DateTime
+  endTime               DateTime?
+  duration              Int?            // In seconds
+  
+  // Content
+  notes                 String?
+  recordingUrl          String?
+  
+  // Follow-up
+  followupRequired      Boolean         @default(false)
+  followupDate          DateTime?
+  followupNotes         String?
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  
+  @@index([orderId])
+  @@index([customerId])
+  @@index([agentId])
+  @@index([callStatusId])
+  @@index([startTime])
+}
+
+// ==================== SHIPPING MODELS ====================
+
+model ShippingCompany {
+  id                    String          @id @default(cuid())
+  name                  String
+  code                  String          @unique
+  logo                  String?
+  
+  organizationId        String
+  organization          Organization    @relation(fields: [organizationId], references: [id])
+  
+  // API Configuration
+  apiUrl                String?
+  apiKey                String?         // Encrypted
+  apiSecret             String?         // Encrypted
+  
+  // Features
+  supportsCOD           Boolean         @default(true)
+  supportsTracking      Boolean         @default(true)
+  supportsLabels        Boolean         @default(true)
+  
+  // Default costs
+  defaultShippingCost   Decimal         @db.Decimal(10, 2) @default(0)
+  codFee                Decimal         @db.Decimal(10, 2) @default(0)
+  
+  // Relationships
+  productRefs           ProductShippingRef[]
+  shipments             Shipment[]
+  shippingStatuses      ShippingStatus[]
+  
+  // Status
+  isActive              Boolean         @default(true)
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  
+  @@index([organizationId])
+}
+
+model ShippingStatus {
+  id                    String          @id @default(cuid())
+  
+  shippingCompanyId     String
+  shippingCompany       ShippingCompany @relation(fields: [shippingCompanyId], references: [id])
+  
+  // Status mapping
+  externalCode          String          // Status code from shipping company
+  internalStatus        String          // Our normalized status
+  name                  String
+  description           String?
+  
+  // Behavior
+  isDelivered           Boolean         @default(false)
+  isReturned            Boolean         @default(false)
+  isInTransit           Boolean         @default(false)
+  
+  // Display
+  displayOrder          Int             @default(0)
+  color                 String?
+  
+  @@unique([shippingCompanyId, externalCode])
+  @@index([shippingCompanyId])
+}
+
+model Shipment {
+  id                    String          @id @default(cuid())
+  
+  orderId               String          @unique
+  order                 Order           @relation(fields: [orderId], references: [id])
+  
+  shippingCompanyId     String
+  shippingCompany       ShippingCompany @relation(fields: [shippingCompanyId], references: [id])
+  
+  // Tracking
+  trackingNumber        String          @unique
+  externalShipmentId    String?         // ID in shipping company system
+  
+  // Status
+  currentStatus         String
+  statusHistory         Json[]          // Array of status updates
+  
+  // Costs
+  shippingCost          Decimal         @db.Decimal(10, 2)
+  codAmount             Decimal?        @db.Decimal(10, 2)
+  insuranceAmount       Decimal?        @db.Decimal(10, 2)
+  totalCost             Decimal         @db.Decimal(10, 2)
+  
+  // Documents
+  labelUrl              String?
+  invoiceUrl            String?
+  
+  // Dates
+  shippedAt             DateTime
+  estimatedDeliveryDate DateTime?
+  actualDeliveryDate    DateTime?
+  returnedAt            DateTime?
+  
+  // Delivery proof
+  deliverySignature     String?
+  deliveryPhoto         String?
+  receiverName          String?
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  
+  @@index([trackingNumber])
+  @@index([shippingCompanyId])
+}
+
+// ==================== SETTINGS & CONFIGURATION ====================
+
+model SystemSetting {
+  id                    String          @id @default(cuid())
+  key                   String          @unique
+  value                 Json
+  description           String?
+  
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+}
+
+model AuditLog {
+  id                    String          @id @default(cuid())
+  
+  userId                String?
+  organizationId        String?
+  
+  action                String
+  entityType            String
+  entityId              String
+  
+  previousValue         Json?
+  newValue              Json?
+  
+  ipAddress             String?
+  userAgent             String?
+  
+  createdAt             DateTime        @default(now())
+  
+  @@index([userId])
+  @@index([organizationId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}

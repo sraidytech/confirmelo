@@ -30,7 +30,7 @@ export class TeamAssignmentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
-  ) {}
+  ) { }
 
   /**
    * Assign a user to a team
@@ -240,7 +240,7 @@ export class TeamAssignmentService {
     // Check cache first
     const cacheKey = `${this.CACHE_PREFIX}store:${userId}:${storeId}`;
     const cached = await this.redis.get(cacheKey);
-    
+
     if (cached) {
       return cached;
     }
@@ -296,9 +296,9 @@ export class TeamAssignmentService {
     }
 
     // Check team-based access
-    const hasTeamAccess = user.teamMemberships.some(membership => 
+    const hasTeamAccess = user.teamMemberships.some(membership =>
       membership.team.storeAssignments.length > 0
-    ) || user.leadingTeams.some(team => 
+    ) || user.leadingTeams.some(team =>
       team.storeAssignments.length > 0
     );
 
@@ -318,7 +318,7 @@ export class TeamAssignmentService {
     // Check cache first
     const cacheKey = `${this.CACHE_PREFIX}team:${userId}:${teamId}`;
     const cached = await this.redis.get(cacheKey);
-    
+
     if (cached) {
       return cached;
     }
@@ -327,7 +327,7 @@ export class TeamAssignmentService {
       where: { id: userId },
       include: {
         teamMemberships: {
-          where: { 
+          where: {
             teamId,
             leftAt: null,
           },
@@ -382,7 +382,7 @@ export class TeamAssignmentService {
   async getUserAccessibleStores(userId: string): Promise<string[]> {
     const cacheKey = `${this.CACHE_PREFIX}user_stores:${userId}`;
     const cached = await this.redis.get(cacheKey);
-    
+
     if (cached) {
       return cached;
     }
@@ -421,7 +421,7 @@ export class TeamAssignmentService {
     // Super admins and admins have access to all stores in their organization
     if (user.role === UserRole.SUPER_ADMIN || user.role === UserRole.ADMIN) {
       const stores = await this.prisma.store.findMany({
-        where: { 
+        where: {
           organizationId: user.organizationId,
           isActive: true,
         },
@@ -453,7 +453,7 @@ export class TeamAssignmentService {
   async getUserAccessibleTeams(userId: string): Promise<string[]> {
     const cacheKey = `${this.CACHE_PREFIX}user_teams:${userId}`;
     const cached = await this.redis.get(cacheKey);
-    
+
     if (cached) {
       return cached;
     }
@@ -480,7 +480,7 @@ export class TeamAssignmentService {
     // Super admins and admins have access to all teams in their organization
     if (user.role === UserRole.SUPER_ADMIN || user.role === UserRole.ADMIN) {
       const teams = await this.prisma.team.findMany({
-        where: { 
+        where: {
           organizationId: user.organizationId,
           deletedAt: null,
         },
@@ -509,7 +509,7 @@ export class TeamAssignmentService {
     // Clear user-specific caches
     await this.redis.del(`${this.CACHE_PREFIX}user_stores:${userId}`);
     await this.redis.del(`${this.CACHE_PREFIX}user_teams:${userId}`);
-    
+
     // Clear store and team access caches
     await this.redis.del(`${this.CACHE_PREFIX}store:${userId}:*`);
     await this.redis.del(`${this.CACHE_PREFIX}team:${userId}:*`);
@@ -520,7 +520,7 @@ export class TeamAssignmentService {
    */
   private async clearTeamAccessCache(teamId: string): Promise<void> {
     const teamMembers = await this.prisma.teamMember.findMany({
-      where: { 
+      where: {
         teamId,
         leftAt: null,
       },

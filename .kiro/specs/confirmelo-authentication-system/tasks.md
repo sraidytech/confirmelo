@@ -112,7 +112,9 @@ This implementation plan converts the authentication system design into actionab
     - Write tests for permission validation across all role types
     - _Requirements: 2.3, 2.4_
 
-  - [ ] 5.2 Build team and resource assignment system
+  - [x] 5.2 Build team and resource assignment system
+
+
 
 
 
@@ -124,7 +126,8 @@ This implementation plan converts the authentication system design into actionab
     - _Requirements: 2.3, 2.4_
 
 - [ ] 6. Create WebSocket integration for real-time features
-  - [ ] 6.1 Implement WebSocket authentication and connection management
+  - [-] 6.1 Implement WebSocket authentication and connection management
+
     - Build WebSocket authentication using JWT tokens from session
     - Create connection management with user presence tracking
     - Implement connection state persistence across browser refreshes

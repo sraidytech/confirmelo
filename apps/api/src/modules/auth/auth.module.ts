@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
@@ -25,6 +25,7 @@ import { RateLimitUtil } from '../../common/utils/rate-limit.util';
         },
       }),
     }),
+    forwardRef(() => import('../websocket/websocket.module').then(m => m.WebsocketModule)),
   ],
   controllers: [AuthController, TeamAssignmentController],
   providers: [

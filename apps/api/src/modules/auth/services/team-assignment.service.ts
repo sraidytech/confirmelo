@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { UserRole } from '@prisma/client';
+import { RealtimeNotificationService } from '../../websocket/services/realtime-notification.service';
 
 export interface TeamAssignmentData {
   teamId: string;
@@ -30,6 +31,8 @@ export class TeamAssignmentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    @Inject(forwardRef(() => RealtimeNotificationService))
+    private readonly realtimeNotificationService: RealtimeNotificationService,
   ) { }
 
   /**
@@ -100,6 +103,16 @@ export class TeamAssignmentService {
 
     // Log the assignment
     await this.logTeamAssignment(teamId, userId, assignedBy, 'ASSIGNED');
+
+    // Broadcast team assignment update in real-time
+    await this.realtimeNotificationService.broadcastTeamAssignmentUpdate({
+      userId,
+      teamId,
+      action: 'assigned',
+      updatedBy: assignedBy,
+      timestamp: new Date(),
+      organizationId: team.organizationId,
+    });
   }
 
   /**
@@ -142,6 +155,16 @@ export class TeamAssignmentService {
 
     // Log the removal
     await this.logTeamAssignment(teamId, userId, removedBy, 'REMOVED');
+
+    // Broadcast team assignment update in real-time
+    await this.realtimeNotificationService.broadcastTeamAssignmentUpdate({
+      userId,
+      teamId,
+      action: 'removed',
+      updatedBy: removedBy,
+      timestamp: new Date(),
+      organizationId: membership.team.organizationId,
+    });
   }
 
   /**
@@ -201,6 +224,24 @@ export class TeamAssignmentService {
 
     // Log the assignment
     await this.logStoreAssignment(teamId, storeId, assignedBy, 'ASSIGNED');
+
+    // Get affected users for real-time notification
+    const teamMembers = await this.prisma.teamMember.findMany({
+      where: { teamId, leftAt: null },
+      select: { userId: true },
+    });
+    const affectedUsers = [...teamMembers.map(m => m.userId), team.leaderId];
+
+    // Broadcast store assignment update in real-time
+    await this.realtimeNotificationService.broadcastStoreAssignmentUpdate({
+      teamId,
+      storeId,
+      action: 'assigned',
+      updatedBy: assignedBy,
+      timestamp: new Date(),
+      organizationId: team.organizationId,
+      affectedUsers: [...new Set(affectedUsers)],
+    });
   }
 
   /**
@@ -231,6 +272,28 @@ export class TeamAssignmentService {
 
     // Log the removal
     await this.logStoreAssignment(teamId, storeId, removedBy, 'REMOVED');
+
+    // Get affected users for real-time notification
+    const team = await this.prisma.team.findUnique({
+      where: { id: teamId },
+      select: { leaderId: true, organizationId: true },
+    });
+    const teamMembers = await this.prisma.teamMember.findMany({
+      where: { teamId, leftAt: null },
+      select: { userId: true },
+    });
+    const affectedUsers = [...teamMembers.map(m => m.userId), team.leaderId];
+
+    // Broadcast store assignment update in real-time
+    await this.realtimeNotificationService.broadcastStoreAssignmentUpdate({
+      teamId,
+      storeId,
+      action: 'removed',
+      updatedBy: removedBy,
+      timestamp: new Date(),
+      organizationId: team.organizationId,
+      affectedUsers: [...new Set(affectedUsers)],
+    });
   }
 
   /**

@@ -126,7 +126,9 @@ This implementation plan converts the authentication system design into actionab
     - _Requirements: 2.3, 2.4_
 
 - [ ] 6. Create WebSocket integration for real-time features
-  - [-] 6.1 Implement WebSocket authentication and connection management
+  - [x] 6.1 Implement WebSocket authentication and connection management
+
+
 
     - Build WebSocket authentication using JWT tokens from session
     - Create connection management with user presence tracking
@@ -135,7 +137,8 @@ This implementation plan converts the authentication system design into actionab
     - Write tests for WebSocket authentication and connection lifecycle
     - _Requirements: 3.1, 3.2_
 
-  - [ ] 6.2 Build real-time permission and session updates
+  - [-] 6.2 Build real-time permission and session updates
+
     - Create real-time permission update broadcasting to connected users
     - Implement immediate session updates when user roles or assignments change
     - Build notification system for security events and account changes

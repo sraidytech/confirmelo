@@ -1,8 +1,9 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { AuthorizationService } from './authorization.service';
 import { UserRole } from '@prisma/client';
 import { getPermissionsForRole } from '../../../common/constants/permissions';
+import { RealtimeNotificationService } from '../../websocket/services/realtime-notification.service';
 
 export interface RoleAssignmentDto {
     userId: string;
@@ -30,6 +31,8 @@ export class RoleManagementService {
     constructor(
         private prisma: PrismaService,
         private authorizationService: AuthorizationService,
+        @Inject(forwardRef(() => RealtimeNotificationService))
+        private realtimeNotificationService: RealtimeNotificationService,
     ) { }
 
     /**
@@ -77,6 +80,16 @@ export class RoleManagementService {
 
         // Update user permissions cache
         await this.authorizationService.updateUserPermissions(assignment.userId);
+
+        // Broadcast permission update in real-time
+        await this.realtimeNotificationService.broadcastPermissionUpdate({
+            userId: assignment.userId,
+            oldRole: previousRole,
+            newRole: assignment.role,
+            updatedBy: assignment.assignedBy,
+            timestamp: new Date(),
+            organizationId: assignment.organizationId || user.organizationId,
+        });
     }
 
     /**

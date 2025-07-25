@@ -6,6 +6,8 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { RegistrationService } from './services/registration.service';
 import { LoginService } from './services/login.service';
+import { TeamAssignmentService } from './services/team-assignment.service';
+import { TeamAssignmentController } from './controllers/team-assignment.controller';
 import { JwtUtil } from '../../common/utils/jwt.util';
 import { PasswordUtil } from '../../common/utils/password.util';
 import { OrganizationUtil } from '../../common/utils/organization.util';
@@ -24,11 +26,12 @@ import { RateLimitUtil } from '../../common/utils/rate-limit.util';
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, TeamAssignmentController],
   providers: [
     AuthService,
     RegistrationService,
     LoginService,
+    TeamAssignmentService,
     JwtUtil,
     PasswordUtil,
     OrganizationUtil,
@@ -38,6 +41,7 @@ import { RateLimitUtil } from '../../common/utils/rate-limit.util';
     AuthService,
     RegistrationService,
     LoginService,
+    TeamAssignmentService,
     JwtUtil,
     PasswordUtil,
     OrganizationUtil,

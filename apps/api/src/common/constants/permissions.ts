@@ -27,6 +27,16 @@ export const PERMISSIONS = {
     ASSIGN_STORES: 'teams:assign_stores',
   },
 
+  // Team Assignment Management
+  TEAM_MANAGEMENT: {
+    VIEW_ASSIGNMENTS: 'team_management:view_assignments',
+    ASSIGN_MEMBERS: 'team_management:assign_members',
+    REMOVE_MEMBERS: 'team_management:remove_members',
+    ASSIGN_STORES: 'team_management:assign_stores',
+    REMOVE_STORES: 'team_management:remove_stores',
+    VALIDATE_ACCESS: 'team_management:validate_access',
+  },
+
   // Order Management
   ORDERS: {
     VIEW: 'orders:view',
@@ -147,6 +157,8 @@ export const ROLE_PERMISSIONS = {
     PERMISSIONS.TEAMS.MANAGE_MEMBERS,
     PERMISSIONS.TEAMS.ASSIGN_STORES,
     
+    ...Object.values(PERMISSIONS.TEAM_MANAGEMENT),
+    
     PERMISSIONS.ORDERS.VIEW,
     PERMISSIONS.ORDERS.CREATE,
     PERMISSIONS.ORDERS.EDIT,
@@ -208,6 +220,12 @@ export const ROLE_PERMISSIONS = {
     PERMISSIONS.TEAMS.VIEW,
     PERMISSIONS.TEAMS.EDIT,
     PERMISSIONS.TEAMS.MANAGE_MEMBERS,
+    
+    PERMISSIONS.TEAM_MANAGEMENT.VIEW_ASSIGNMENTS,
+    PERMISSIONS.TEAM_MANAGEMENT.ASSIGN_MEMBERS,
+    PERMISSIONS.TEAM_MANAGEMENT.REMOVE_MEMBERS,
+    PERMISSIONS.TEAM_MANAGEMENT.ASSIGN_STORES,
+    PERMISSIONS.TEAM_MANAGEMENT.REMOVE_STORES,
     
     PERMISSIONS.ORDERS.VIEW,
     PERMISSIONS.ORDERS.CREATE,
@@ -370,7 +388,7 @@ export function roleHasPermission(role: string, permission: string): boolean {
 export const PERMISSION_CATEGORIES = {
   'Organization Management': Object.values(PERMISSIONS.ORGANIZATION),
   'User Management': Object.values(PERMISSIONS.USERS),
-  'Team Management': Object.values(PERMISSIONS.TEAMS),
+  'Team Management': [...Object.values(PERMISSIONS.TEAMS), ...Object.values(PERMISSIONS.TEAM_MANAGEMENT)],
   'Order Management': Object.values(PERMISSIONS.ORDERS),
   'Customer Management': Object.values(PERMISSIONS.CUSTOMERS),
   'Product Management': Object.values(PERMISSIONS.PRODUCTS),

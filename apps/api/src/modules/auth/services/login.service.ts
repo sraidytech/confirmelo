@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException, BadRequestException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { AuditLogService } from '../../../common/services/audit-log.service';
 import { PasswordUtil } from '../../../common/utils/password.util';
 import { JwtUtil } from '../../../common/utils/jwt.util';
 import { RateLimitUtil } from '../../../common/utils/rate-limit.util';
@@ -12,6 +13,7 @@ export class LoginService {
   constructor(
     private prisma: PrismaService,
     private redisService: RedisService,
+    private auditLogService: AuditLogService,
     private passwordUtil: PasswordUtil,
     private jwtUtil: JwtUtil,
     private rateLimitUtil: RateLimitUtil,
@@ -294,21 +296,13 @@ export class LoginService {
   }
 
   private async logSecurityEvent(type: string, details: any): Promise<void> {
-    try {
-      await this.prisma.auditLog.create({
-        data: {
-          userId: details.userId,
-          organizationId: details.organizationId,
-          action: type,
-          entityType: 'AUTH',
-          entityId: details.sessionId || details.userId || 'unknown',
-          newValue: details,
-          ipAddress: details.ipAddress,
-          userAgent: details.userAgent,
-        },
-      });
-    } catch (error) {
-      console.error('Failed to log security event:', error);
-    }
+    await this.auditLogService.logSecurityEvent(
+      type,
+      details.userId,
+      details.organizationId,
+      details,
+      details.ipAddress,
+      details.userAgent,
+    );
   }
 }

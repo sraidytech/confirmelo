@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { TeamAssignmentService } from './team-assignment.service';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { RealtimeNotificationService } from '../../websocket/services/realtime-notification.service';
 import { UserRole } from '@prisma/client';
 
 describe('TeamAssignmentService', () => {
@@ -70,6 +71,11 @@ describe('TeamAssignmentService', () => {
       del: jest.fn(),
     };
 
+    const mockRealtimeNotificationService = {
+      broadcastTeamAssignmentUpdate: jest.fn(),
+      broadcastStoreAssignmentUpdate: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TeamAssignmentService,
@@ -80,6 +86,10 @@ describe('TeamAssignmentService', () => {
         {
           provide: RedisService,
           useValue: mockRedisService,
+        },
+        {
+          provide: RealtimeNotificationService,
+          useValue: mockRealtimeNotificationService,
         },
       ],
     }).compile();

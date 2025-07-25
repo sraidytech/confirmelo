@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../../common/database/prisma.service';
+import { AuditLogService } from '../../../common/services/audit-log.service';
 import { AuthorizationService } from './authorization.service';
 import { UserRole } from '@prisma/client';
 import { getPermissionsForRole } from '../../../common/constants/permissions';
@@ -30,6 +31,7 @@ export interface StoreAssignmentDto {
 export class RoleManagementService {
     constructor(
         private prisma: PrismaService,
+        private auditLogService: AuditLogService,
         private authorizationService: AuthorizationService,
         @Inject(forwardRef(() => RealtimeNotificationService))
         private realtimeNotificationService: RealtimeNotificationService,
@@ -64,19 +66,14 @@ export class RoleManagementService {
         });
 
         // Log the role change
-        await this.prisma.auditLog.create({
-            data: {
-                action: 'ROLE_ASSIGNED',
-                entityType: 'USER',
-                entityId: assignment.userId,
-                userId: assignment.assignedBy,
-                organizationId: assignment.organizationId || user.organizationId,
-                previousValue: { role: previousRole },
-                newValue: { role: assignment.role, reason: assignment.reason },
-                ipAddress: null,
-                userAgent: null,
-            },
-        });
+        await this.auditLogService.logUserEvent(
+            AuditLogService.ACTIONS.ROLE_ASSIGNED,
+            assignment.userId,
+            assignment.organizationId || user.organizationId,
+            assignment.assignedBy,
+            { role: previousRole },
+            { role: assignment.role, reason: assignment.reason },
+        );
 
         // Update user permissions cache
         await this.authorizationService.updateUserPermissions(assignment.userId);

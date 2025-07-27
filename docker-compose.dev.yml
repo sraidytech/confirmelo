@@ -1,9 +1,11 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: confirmelo-postgres
+    container_name: confirmelo-postgres-dev
+    restart: unless-stopped
     environment:
       POSTGRES_DB: confirmelo_dev
       POSTGRES_USER: confirmelo
@@ -11,26 +13,95 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_dev_data:/var/lib/postgresql/data
+    networks:
+      - confirmelo-dev-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U confirmelo -d confirmelo_dev"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # Redis Cache
   redis:
     image: redis:7-alpine
-    container_name: confirmelo-redis
+    container_name: confirmelo-redis-dev
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      - redis_dev_data:/data
+    networks:
+      - confirmelo-dev-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # NestJS API (Development)
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.dev
+    container_name: confirmelo-api-dev
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+      - "9229:9229" # Debug port
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://confirmelo:confirmelo_password@postgres:5432/confirmelo_dev
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-jwt-secret-key
+      JWT_REFRESH_SECRET: dev-refresh-secret-key
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 587
+      SMTP_USER: your-email@gmail.com
+      SMTP_PASS: your-app-password
+      CORS_ORIGIN: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - confirmelo-dev-network
+    volumes:
+      - ./apps/api:/app
+      - /app/node_modules
+      - ./apps/api/uploads:/app/uploads
+
+  # Next.js Web App (Development)
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.dev
+    container_name: confirmelo-web-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_WS_URL: ws://localhost:3001
+      # Internal API URL for server-side requests
+      API_URL: http://api:3001
+    depends_on:
+      - api
+    networks:
+      - confirmelo-dev-network
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+
 volumes:
-  postgres_data:
-  redis_data:
+  postgres_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+
+networks:
+  confirmelo-dev-network:
+    driver: bridge

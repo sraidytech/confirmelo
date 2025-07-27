@@ -4,224 +4,225 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
   OnGatewayInit,
-  SubscribeMessage,
-  MessageBody,
-  ConnectedSocket,
 } from '@nestjs/websockets';
+import { Injectable, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
-import { Logger, UseGuards } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { Cron, CronExpression } from '@nestjs/schedule';
-import { WebsocketService } from './websocket.service';
+import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '../../common/database/prisma.service';
+import { RedisService } from '../../common/redis/redis.service';
 
+@Injectable()
 @WebSocketGateway({
   cors: {
-    origin: process.env.WEBSOCKET_CORS_ORIGIN || 'http://localhost:3000',
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     credentials: true,
   },
-  transports: ['websocket', 'polling'],
+  namespace: '/realtime',
 })
-export class WebsocketGateway 
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect 
-{
+export class WebsocketGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
   private readonly logger = new Logger(WebsocketGateway.name);
+  private readonly userSockets = new Map<string, Set<string>>(); // userId -> Set of socketIds
+  private readonly socketUsers = new Map<string, string>(); // socketId -> userId
 
   constructor(
-    private readonly configService: ConfigService,
-    private readonly websocketService: WebsocketService,
+    private readonly jwtService: JwtService,
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
   ) {}
 
   afterInit(server: Server) {
     this.logger.log('WebSocket Gateway initialized');
-    
-    // Set up server reference in service for broadcasting
-    this.setupServerReference(server);
   }
 
   async handleConnection(client: Socket) {
-    this.logger.log(`Client attempting connection: ${client.id}`);
-    
-    const success = await this.websocketService.handleConnection(client);
-    
-    if (!success) {
-      this.logger.warn(`Connection rejected for client: ${client.id}`);
-      client.disconnect();
-      return;
-    }
+    try {
+      const token = client.handshake.auth?.token || client.handshake.headers?.authorization?.replace('Bearer ', '');
+      
+      if (!token) {
+        this.logger.warn(`Connection rejected: No token provided`);
+        client.disconnect();
+        return;
+      }
 
-    this.logger.log(`Client successfully connected: ${client.id}`);
+      const payload = this.jwtService.verify(token);
+      const userId = payload.sub;
+
+      // Verify user exists and is active
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, status: true, organizationId: true },
+      });
+
+      if (!user || user.status !== 'ACTIVE') {
+        this.logger.warn(`Connection rejected: User ${userId} not found or inactive`);
+        client.disconnect();
+        return;
+      }
+
+      // Store connection mapping
+      if (!this.userSockets.has(userId)) {
+        this.userSockets.set(userId, new Set());
+      }
+      this.userSockets.get(userId)!.add(client.id);
+      this.socketUsers.set(client.id, userId);
+
+      // Join user to their organization room
+      client.join(`org:${user.organizationId}`);
+      client.join(`user:${userId}`);
+
+      // Update user online status in Redis
+      await this.updateUserOnlineStatus(userId, true);
+
+      this.logger.log(`User ${userId} connected with socket ${client.id}`);
+      
+      // Notify user of successful connection
+      client.emit('connected', {
+        message: 'Successfully connected to real-time notifications',
+        timestamp: new Date(),
+      });
+
+    } catch (error) {
+      this.logger.error(`Connection error: ${error.message}`);
+      client.disconnect();
+    }
   }
 
   async handleDisconnect(client: Socket) {
-    this.logger.log(`Client disconnecting: ${client.id}`);
-    await this.websocketService.handleDisconnection(client);
-  }
-
-  @SubscribeMessage('ping')
-  async handlePing(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: any,
-  ): Promise<void> {
-    // Update user activity on ping
-    await this.websocketService.updateActivity(client.id);
+    const userId = this.socketUsers.get(client.id);
     
-    // Send pong response
-    client.emit('pong', {
-      timestamp: new Date(),
-      data,
-    });
-  }
-
-  @SubscribeMessage('get_presence')
-  async handleGetPresence(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { userId: string },
-  ): Promise<void> {
-    try {
-      const presence = await this.websocketService.getUserPresence(data.userId);
-      client.emit('presence_update', presence);
-    } catch (error) {
-      client.emit('error', {
-        event: 'get_presence',
-        message: 'Failed to get user presence',
-      });
-    }
-  }
-
-  @SubscribeMessage('get_online_users')
-  async handleGetOnlineUsers(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { organizationId: string },
-  ): Promise<void> {
-    try {
-      const onlineUsers = await this.websocketService.getOnlineUsersInOrganization(
-        data.organizationId,
-      );
-      client.emit('online_users', {
-        organizationId: data.organizationId,
-        users: onlineUsers,
-        timestamp: new Date(),
-      });
-    } catch (error) {
-      client.emit('error', {
-        event: 'get_online_users',
-        message: 'Failed to get online users',
-      });
-    }
-  }
-
-  @SubscribeMessage('join_room')
-  async handleJoinRoom(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { room: string },
-  ): Promise<void> {
-    try {
-      await client.join(data.room);
-      client.emit('room_joined', {
-        room: data.room,
-        timestamp: new Date(),
-      });
+    if (userId) {
+      // Remove socket from user's socket set
+      const userSocketSet = this.userSockets.get(userId);
+      if (userSocketSet) {
+        userSocketSet.delete(client.id);
+        
+        // If no more sockets for this user, mark as offline
+        if (userSocketSet.size === 0) {
+          this.userSockets.delete(userId);
+          await this.updateUserOnlineStatus(userId, false);
+        }
+      }
       
-      this.logger.log(`Client ${client.id} joined room: ${data.room}`);
-    } catch (error) {
-      client.emit('error', {
-        event: 'join_room',
-        message: 'Failed to join room',
-      });
-    }
-  }
-
-  @SubscribeMessage('leave_room')
-  async handleLeaveRoom(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() data: { room: string },
-  ): Promise<void> {
-    try {
-      await client.leave(data.room);
-      client.emit('room_left', {
-        room: data.room,
-        timestamp: new Date(),
-      });
-      
-      this.logger.log(`Client ${client.id} left room: ${data.room}`);
-    } catch (error) {
-      client.emit('error', {
-        event: 'leave_room',
-        message: 'Failed to leave room',
-      });
+      this.socketUsers.delete(client.id);
+      this.logger.log(`User ${userId} disconnected socket ${client.id}`);
     }
   }
 
   /**
-   * Broadcast message to specific user
+   * Broadcast message to a specific user across all their connected devices
    */
   async broadcastToUser(userId: string, event: string, data: any): Promise<void> {
-    this.server.to(`user:${userId}`).emit(event, data);
+    try {
+      const userSocketSet = this.userSockets.get(userId);
+      if (userSocketSet && userSocketSet.size > 0) {
+        // Send to all user's connected sockets
+        for (const socketId of userSocketSet) {
+          this.server.to(socketId).emit(event, {
+            ...data,
+            timestamp: new Date(),
+          });
+        }
+        this.logger.debug(`Broadcasted ${event} to user ${userId} on ${userSocketSet.size} sockets`);
+      } else {
+        this.logger.debug(`User ${userId} not connected, skipping broadcast of ${event}`);
+      }
+    } catch (error) {
+      this.logger.error(`Error broadcasting to user ${userId}: ${error.message}`);
+    }
   }
 
   /**
-   * Broadcast message to organization
+   * Broadcast message to all users in an organization
    */
   async broadcastToOrganization(organizationId: string, event: string, data: any): Promise<void> {
-    this.server.to(`org:${organizationId}`).emit(event, data);
-  }
-
-  /**
-   * Disconnect user from all sessions
-   */
-  async disconnectUser(userId: string, reason?: string): Promise<void> {
-    if (reason) {
-      // Emit disconnection reason before disconnecting
-      this.server.to(`user:${userId}`).emit('force_disconnect', {
-        reason,
+    try {
+      this.server.to(`org:${organizationId}`).emit(event, {
+        ...data,
         timestamp: new Date(),
       });
+      this.logger.debug(`Broadcasted ${event} to organization ${organizationId}`);
+    } catch (error) {
+      this.logger.error(`Error broadcasting to organization ${organizationId}: ${error.message}`);
     }
+  }
 
-    // Get all sockets for the user and disconnect them
-    const sockets = await this.server.in(`user:${userId}`).fetchSockets();
-    for (const socket of sockets) {
-      socket.disconnect();
+  /**
+   * Force disconnect a user from all their sessions
+   */
+  async disconnectUser(userId: string, reason?: string): Promise<void> {
+    try {
+      const userSocketSet = this.userSockets.get(userId);
+      if (userSocketSet) {
+        for (const socketId of userSocketSet) {
+          const socket = this.server.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.emit('force_disconnect', {
+              reason: reason || 'Session terminated',
+              timestamp: new Date(),
+            });
+            socket.disconnect(true);
+          }
+        }
+        this.userSockets.delete(userId);
+        await this.updateUserOnlineStatus(userId, false);
+        this.logger.log(`Force disconnected user ${userId}: ${reason}`);
+      }
+    } catch (error) {
+      this.logger.error(`Error force disconnecting user ${userId}: ${error.message}`);
     }
-
-    // Clean up in service
-    await this.websocketService.disconnectUser(userId, reason);
   }
 
   /**
-   * Get connection statistics
+   * Get list of online users in an organization
    */
-  getConnectionStats() {
-    return this.websocketService.getConnectionStats();
+  async getOnlineUsers(organizationId: string): Promise<string[]> {
+    try {
+      const onlineUsers: string[] = [];
+      for (const [userId, socketSet] of this.userSockets.entries()) {
+        if (socketSet.size > 0) {
+          // Verify user belongs to the organization
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { organizationId: true },
+          });
+          if (user?.organizationId === organizationId) {
+            onlineUsers.push(userId);
+          }
+        }
+      }
+      return onlineUsers;
+    } catch (error) {
+      this.logger.error(`Error getting online users for org ${organizationId}: ${error.message}`);
+      return [];
+    }
   }
 
   /**
-   * Cleanup expired connections every 5 minutes
+   * Check if a specific user is online
    */
-  @Cron(CronExpression.EVERY_5_MINUTES)
-  async handleConnectionCleanup() {
-    this.logger.log('Running connection cleanup...');
-    await this.websocketService.cleanupExpiredConnections();
+  isUserOnline(userId: string): boolean {
+    const userSocketSet = this.userSockets.get(userId);
+    return userSocketSet ? userSocketSet.size > 0 : false;
   }
 
   /**
-   * Set up server reference for broadcasting
+   * Update user online status in Redis for persistence
    */
-  private setupServerReference(server: Server): void {
-    // Extend the websocket service with server methods
-    (this.websocketService as any).broadcastToUser = (userId: string, event: string, data: any) => {
-      return this.broadcastToUser(userId, event, data);
-    };
-
-    (this.websocketService as any).broadcastToOrganization = (organizationId: string, event: string, data: any) => {
-      return this.broadcastToOrganization(organizationId, event, data);
-    };
-
-    (this.websocketService as any).disconnectUser = (userId: string, reason?: string) => {
-      return this.disconnectUser(userId, reason);
-    };
+  private async updateUserOnlineStatus(userId: string, isOnline: boolean): Promise<void> {
+    try {
+      const redisClient = this.redis.getClient();
+      const key = `user:${userId}:online`;
+      
+      if (isOnline) {
+        await redisClient.set(key, '1', { EX: 300 }); // 5 minutes TTL
+      } else {
+        await redisClient.del(key);
+      }
+    } catch (error) {
+      this.logger.error(`Error updating online status for user ${userId}: ${error.message}`);
+    }
   }
 }

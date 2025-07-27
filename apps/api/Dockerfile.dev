@@ -1,0 +1,26 @@
+# Development Dockerfile for NestJS API
+FROM node:18-alpine
+
+# Install dependencies for development including SSL libraries for Prisma
+RUN apk add --no-cache libc6-compat curl openssl
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json* ./
+COPY prisma ./prisma/
+
+# Install all dependencies (including dev dependencies)
+RUN npm install
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Copy source code
+COPY . .
+
+# Expose ports (3001 for app, 9229 for debugging)
+EXPOSE 3001 9229
+
+# Start development server with debugging
+CMD ["npm", "run", "start:debug"]

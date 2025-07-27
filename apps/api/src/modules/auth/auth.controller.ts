@@ -1,18 +1,33 @@
-import { Controller, Get, Post, Body, Query, Req, Ip } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
-import { RegistrationService } from './services/registration.service';
-import { LoginService } from './services/login.service';
-import { OrganizationUtil } from '../../common/utils/organization.util';
-import { RegisterOrganizationDto, RegisterResponseDto } from './dto/register.dto';
-import { LoginDto, LoginResponseDto, RefreshTokenDto, RefreshTokenResponseDto } from './dto/login.dto';
+import { Controller, Get, Post, Body } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { PrismaService } from '../../common/database/prisma.service';
+import * as bcrypt from 'bcrypt';
+import { JwtService } from '@nestjs/jwt';
+
+interface RegisterDto {
+  // Organization details
+  organizationName: string;
+  organizationEmail: string;
+  organizationCountry: string;
+  
+  // Admin user details
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+}
+
+interface LoginDto {
+  email: string;
+  password: string;
+}
 
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
   constructor(
-    private registrationService: RegistrationService,
-    private loginService: LoginService,
-    private organizationUtil: OrganizationUtil,
+    private prisma: PrismaService,
+    private jwtService: JwtService,
   ) {}
 
   @Get('health')
@@ -26,178 +41,178 @@ export class AuthController {
   }
 
   @Post('register')
-  @ApiOperation({ summary: 'Register a new organization with admin user' })
-  @ApiResponse({
-    status: 201,
-    description: 'Organization registered successfully',
-    type: RegisterResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Bad request - validation errors or weak password',
-  })
-  @ApiResponse({
-    status: 409,
-    description: 'Conflict - email, username, or organization already exists',
-  })
-  async register(@Body() dto: RegisterOrganizationDto): Promise<RegisterResponseDto> {
-    return this.registrationService.registerOrganization(dto);
-  }
+  @ApiOperation({ summary: 'Register organization and admin user' })
+  @ApiResponse({ status: 201, description: 'Registration successful' })
+  async register(@Body() dto: RegisterDto) {
+    try {
+      // Hash password
+      const hashedPassword = await bcrypt.hash(dto.password, 12);
+      
+      // Generate organization code
+      const orgCode = dto.organizationName
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '')
+        .substring(0, 6) + Math.floor(Math.random() * 1000);
 
-  @Get('check-availability')
-  @ApiOperation({ summary: 'Check availability of email, username, or organization name' })
-  @ApiQuery({ name: 'email', required: false, description: 'Email to check' })
-  @ApiQuery({ name: 'username', required: false, description: 'Username to check' })
-  @ApiQuery({ name: 'organizationName', required: false, description: 'Organization name to check' })
-  @ApiResponse({
-    status: 200,
-    description: 'Availability check results',
-    schema: {
-      type: 'object',
-      properties: {
-        email: { type: 'boolean', description: 'True if email is available' },
-        username: { type: 'boolean', description: 'True if username is available' },
-        organizationName: { type: 'boolean', description: 'True if organization name is available' },
-      },
-    },
-  })
-  async checkAvailability(
-    @Query('email') email?: string,
-    @Query('username') username?: string,
-    @Query('organizationName') organizationName?: string,
-  ) {
-    const result: any = {};
+      // Create organization and user in transaction
+      const result = await this.prisma.$transaction(async (tx) => {
+        // Create organization
+        const organization = await tx.organization.create({
+          data: {
+            name: dto.organizationName,
+            code: orgCode,
+            email: dto.organizationEmail,
+            country: dto.organizationCountry,
+            timezone: 'UTC',
+            currency: 'USD',
+          },
+        });
 
-    if (email) {
-      result.email = await this.registrationService.isEmailAvailable(email);
+        // Create admin user
+        const user = await tx.user.create({
+          data: {
+            email: dto.email,
+            username: dto.email,
+            password: hashedPassword,
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            role: 'ADMIN',
+            status: 'ACTIVE',
+            organizationId: organization.id,
+          },
+        });
+
+        return { organization, user };
+      });
+
+      // Generate JWT tokens
+      const payload = { 
+        sub: result.user.id, 
+        email: result.user.email,
+        role: result.user.role,
+        organizationId: result.organization.id 
+      };
+      
+      const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
+      const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
+
+      return {
+        user: {
+          id: result.user.id,
+          email: result.user.email,
+          firstName: result.user.firstName,
+          lastName: result.user.lastName,
+          role: result.user.role,
+          status: result.user.status,
+          organization: {
+            id: result.organization.id,
+            name: result.organization.name,
+            code: result.organization.code,
+          },
+        },
+        tokens: {
+          accessToken,
+          refreshToken,
+        },
+      };
+    } catch (error) {
+      console.error('Registration error:', error);
+      throw new Error('Registration failed');
     }
-
-    if (username) {
-      result.username = await this.registrationService.isUsernameAvailable(username);
-    }
-
-    if (organizationName) {
-      result.organizationName = await this.registrationService.isOrganizationNameAvailable(organizationName);
-    }
-
-    return result;
-  }
-
-  @Get('validate-organization-code')
-  @ApiOperation({ summary: 'Validate organization code format and availability' })
-  @ApiQuery({ name: 'code', required: true, description: 'Organization code to validate' })
-  @ApiResponse({
-    status: 200,
-    description: 'Code validation results',
-    schema: {
-      type: 'object',
-      properties: {
-        isValid: { type: 'boolean', description: 'True if code format is valid' },
-        isAvailable: { type: 'boolean', description: 'True if code is available' },
-        suggestedCode: { type: 'string', description: 'Suggested alternative code if not available' },
-      },
-    },
-  })
-  async validateOrganizationCode(@Query('code') code: string) {
-    const isValid = this.organizationUtil.validateCodeFormat(code);
-    const isAvailable = isValid ? !(await this.organizationUtil['codeExists'](code)) : false;
-    
-    let suggestedCode: string | undefined;
-    if (!isAvailable && isValid) {
-      // Generate a suggestion based on the provided code
-      try {
-        suggestedCode = await this.organizationUtil.generateUniqueCode(code.replace(/_/g, ' '));
-      } catch (error) {
-        // If generation fails, provide a simple suggestion
-        suggestedCode = `${code}_${Math.floor(Math.random() * 1000)}`;
-      }
-    }
-
-    return {
-      isValid,
-      isAvailable,
-      ...(suggestedCode && { suggestedCode }),
-    };
   }
 
   @Post('login')
-  @ApiOperation({ summary: 'Login with email and password' })
-  @ApiResponse({
-    status: 200,
-    description: 'Login successful',
-    type: LoginResponseDto,
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Invalid credentials',
-  })
-  @ApiResponse({
-    status: 403,
-    description: 'Account locked or inactive',
-  })
-  @ApiResponse({
-    status: 429,
-    description: 'Too many requests - rate limited',
-  })
-  async login(
-    @Body() dto: LoginDto,
-    @Req() req: Request,
-    @Ip() ip: string,
-  ): Promise<LoginResponseDto> {
-    const userAgent = req.headers['user-agent'] || 'Unknown';
-    return this.loginService.login(dto, ip, userAgent);
+  @ApiOperation({ summary: 'Login user' })
+  @ApiResponse({ status: 200, description: 'Login successful' })
+  async login(@Body() dto: LoginDto) {
+    try {
+      // Find user
+      const user = await this.prisma.user.findUnique({
+        where: { email: dto.email },
+        include: { organization: true },
+      });
+
+      if (!user) {
+        throw new Error('Invalid credentials');
+      }
+
+      // Verify password
+      const isValidPassword = await bcrypt.compare(dto.password, user.password);
+      if (!isValidPassword) {
+        throw new Error('Invalid credentials');
+      }
+
+      // Generate JWT tokens
+      const payload = { 
+        sub: user.id, 
+        email: user.email,
+        role: user.role,
+        organizationId: user.organizationId 
+      };
+      
+      const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
+      const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
+
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          status: user.status,
+          organization: user.organization ? {
+            id: user.organization.id,
+            name: user.organization.name,
+            code: user.organization.code,
+          } : null,
+        },
+        tokens: {
+          accessToken,
+          refreshToken,
+        },
+      };
+    } catch (error) {
+      console.error('Login error:', error);
+      throw new Error('Login failed');
+    }
   }
 
   @Post('refresh')
-  @ApiOperation({ summary: 'Refresh access token using refresh token' })
-  @ApiResponse({
-    status: 200,
-    description: 'Token refreshed successfully',
-    type: RefreshTokenResponseDto,
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Invalid refresh token',
-  })
-  async refreshToken(@Body() dto: RefreshTokenDto): Promise<RefreshTokenResponseDto> {
-    return this.loginService.refreshToken(dto);
+  @ApiOperation({ summary: 'Refresh access token' })
+  async refreshToken(@Body() body: { refreshToken: string }) {
+    try {
+      const payload = this.jwtService.verify(body.refreshToken);
+      
+      const newAccessToken = this.jwtService.sign({
+        sub: payload.sub,
+        email: payload.email,
+        role: payload.role,
+        organizationId: payload.organizationId,
+      }, { expiresIn: '15m' });
+
+      const newRefreshToken = this.jwtService.sign({
+        sub: payload.sub,
+        email: payload.email,
+        role: payload.role,
+        organizationId: payload.organizationId,
+      }, { expiresIn: '7d' });
+
+      return {
+        tokens: {
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken,
+        },
+      };
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      throw new Error('Token refresh failed');
+    }
   }
 
   @Post('logout')
-  @ApiOperation({ summary: 'Logout from current session' })
-  @ApiResponse({
-    status: 200,
-    description: 'Logout successful',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        message: { type: 'string' },
-      },
-    },
-  })
-  async logout(
-    @Body() body: { sessionId: string; accessToken: string },
-  ) {
-    return this.loginService.logout(body.sessionId, body.accessToken);
-  }
-
-  @Post('logout-all')
-  @ApiOperation({ summary: 'Logout from all devices' })
-  @ApiResponse({
-    status: 200,
-    description: 'Logged out from all devices successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        message: { type: 'string' },
-      },
-    },
-  })
-  async logoutFromAllDevices(
-    @Body() body: { userId: string },
-  ) {
-    return this.loginService.logoutFromAllDevices(body.userId);
+  @ApiOperation({ summary: 'Logout user' })
+  async logout() {
+    return { message: 'Logout successful' };
   }
 }

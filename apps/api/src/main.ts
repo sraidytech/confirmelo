@@ -25,10 +25,13 @@ async function bootstrap() {
   // CORS configuration
   app.enableCors({
     origin: [
-      configService.get('FRONTEND_URL', 'http://localhost:3000'),
-      configService.get('WEBSOCKET_CORS_ORIGIN', 'http://localhost:3000'),
+      configService.get('CORS_ORIGIN', 'http://localhost:3000'),
+      'http://localhost:3000',
+      'http://web:3000',
     ],
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-ID'],
   });
 
   // Global validation pipe

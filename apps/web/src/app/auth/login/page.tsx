@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
@@ -10,6 +10,7 @@ import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '@/contexts/auth-context';
+import { useLoginRedirect } from '@/hooks/use-auth-redirect';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,12 +24,13 @@ type LoginFormData = {
   rememberMe?: boolean;
 };
 
-export default function LoginPage() {
+function LoginPageContent() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
   const router = useRouter();
   const { t } = useTranslation('auth');
+  const { redirectAfterLogin } = useLoginRedirect();
 
   const loginSchema = z.object({
     email: z.string().email(t('validation.emailInvalid')),
@@ -53,8 +55,8 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginFormData) => {
     try {
       setIsLoading(true);
-      await login(data as LoginCredentials);
-      router.push('/dashboard');
+      const result = await login(data as LoginCredentials);
+      redirectAfterLogin(result.user.role);
     } catch (error: any) {
       // Handle specific error cases
       if (error.code === 'INVALID_CREDENTIALS') {
@@ -192,5 +194,13 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+export 
+default function LoginPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

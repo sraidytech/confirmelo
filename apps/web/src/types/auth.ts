@@ -124,8 +124,8 @@ export interface ValidationError {
 export interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (credentials: LoginCredentials) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
+  login: (credentials: LoginCredentials) => Promise<AuthResult>;
+  register: (data: RegisterData) => Promise<AuthResult>;
   logout: () => Promise<void>;
   refreshToken: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;

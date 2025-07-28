@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
@@ -9,13 +9,13 @@ import { z } from 'zod';
 import { Loader2, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react';
 
 import { useAuth } from '@/contexts/auth-context';
+import { apiClient } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LanguageSwitcher } from '@/components/auth/language-switcher';
 import { PasswordStrength } from '@/components/auth/password-strength';
-import { apiClient } from '@/lib/api';
 import { validatePassword } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 
@@ -61,11 +61,7 @@ function ResetPasswordContent() {
 
   const password = watch('password');
 
-  useEffect(() => {
-    validateToken();
-  }, [token]);
-
-  const validateToken = async () => {
+  const validateToken = useCallback(async () => {
     if (!token) {
       setIsValidToken(false);
       setIsValidating(false);
@@ -80,7 +76,11 @@ function ResetPasswordContent() {
     } finally {
       setIsValidating(false);
     }
-  };
+  }, [token]);
+
+  useEffect(() => {
+    validateToken();
+  }, [validateToken]);
 
   const onSubmit = async (data: ResetPasswordFormData) => {
     if (!token) return;

@@ -18,8 +18,8 @@ import {
 } from '@nestjs/swagger';
 import { RealtimeNotificationService } from '../services/realtime-notification.service';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
-import { PermissionsGuard } from '../../../common/guards/permissions.guard';
-import { RequirePermissions } from '../../../common/decorators/permissions.decorator';
+import { RolesGuard } from '../../../common/guards/roles.guard';
+import { Permissions } from '../../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { PERMISSIONS } from '../../../common/constants/permissions';
 import {
@@ -36,14 +36,14 @@ import {
 @ApiTags('Real-time Notifications')
 @ApiBearerAuth()
 @Controller('notifications')
-@UseGuards(JwtAuthGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class RealtimeNotificationController {
   constructor(
     private readonly realtimeNotificationService: RealtimeNotificationService,
   ) {}
 
   @Get()
-  @RequirePermissions(PERMISSIONS.USERS.VIEW)
+  @Permissions(PERMISSIONS.USERS.VIEW)
   @ApiOperation({
     summary: 'Get user notifications',
     description: 'Get stored notifications for the current user',
@@ -80,7 +80,7 @@ export class RealtimeNotificationController {
 
   @Post('mark-read')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermissions(PERMISSIONS.USERS.VIEW)
+  @Permissions(PERMISSIONS.USERS.VIEW)
   @ApiOperation({
     summary: 'Mark notifications as read',
     description: 'Mark specific notifications as read for the current user',
@@ -101,7 +101,7 @@ export class RealtimeNotificationController {
 
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermissions(PERMISSIONS.USERS.VIEW)
+  @Permissions(PERMISSIONS.USERS.VIEW)
   @ApiOperation({
     summary: 'Clear all notifications',
     description: 'Clear all notifications for the current user',
@@ -118,7 +118,7 @@ export class RealtimeNotificationController {
 
   @Post('broadcast/permission-update')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermissions(PERMISSIONS.USERS.MANAGE_ROLES)
+  @Permissions(PERMISSIONS.USERS.MANAGE_ROLES)
   @ApiOperation({
     summary: 'Broadcast permission update',
     description: 'Broadcast a permission update event to affected users',
@@ -135,7 +135,7 @@ export class RealtimeNotificationController {
 
   @Post('broadcast/session-update')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermissions(PERMISSIONS.SYSTEM.MANAGE_SETTINGS)
+  @Permissions(PERMISSIONS.SYSTEM.MANAGE_SETTINGS)
   @ApiOperation({
     summary: 'Broadcast session update',
     description: 'Broadcast a session update event to affected users',
@@ -152,7 +152,7 @@ export class RealtimeNotificationController {
 
   @Post('broadcast/security-event')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermissions(PERMISSIONS.SYSTEM.VIEW_AUDIT_LOGS)
+  @Permissions(PERMISSIONS.SYSTEM.VIEW_AUDIT_LOGS)
   @ApiOperation({
     summary: 'Broadcast security event',
     description: 'Broadcast a security event to affected users and admins',
@@ -169,7 +169,7 @@ export class RealtimeNotificationController {
 
   @Post('broadcast/status-update')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermissions(PERMISSIONS.USERS.MANAGE_ROLES)
+  @Permissions(PERMISSIONS.USERS.MANAGE_ROLES)
   @ApiOperation({
     summary: 'Broadcast user status update',
     description: 'Broadcast a user status update event',
@@ -186,7 +186,7 @@ export class RealtimeNotificationController {
 
   @Post('broadcast/team-assignment')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermissions(PERMISSIONS.TEAM_MANAGEMENT.ASSIGN_MEMBERS)
+  @Permissions(PERMISSIONS.TEAM_MANAGEMENT.ASSIGN_MEMBERS)
   @ApiOperation({
     summary: 'Broadcast team assignment update',
     description: 'Broadcast a team assignment update event',
@@ -203,7 +203,7 @@ export class RealtimeNotificationController {
 
   @Post('broadcast/store-assignment')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermissions(PERMISSIONS.TEAM_MANAGEMENT.ASSIGN_STORES)
+  @Permissions(PERMISSIONS.TEAM_MANAGEMENT.ASSIGN_STORES)
   @ApiOperation({
     summary: 'Broadcast store assignment update',
     description: 'Broadcast a store assignment update event',

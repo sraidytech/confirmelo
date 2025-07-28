@@ -216,7 +216,9 @@ class ApiClient {
       const response = await this.client.get('/auth/me');
       return response.data;
     } catch (error) {
-      throw this.handleApiError(error as AxiosError);
+      const axiosError = error as AxiosError;
+      // Don't try to refresh token here, let the interceptor handle it
+      throw this.handleApiError(axiosError);
     }
   }
 

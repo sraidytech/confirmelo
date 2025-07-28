@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useForm } from 'react-hook-form';
@@ -10,6 +10,7 @@ import { Loader2, Eye, EyeOff, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '@/contexts/auth-context';
+import { useLoginRedirect } from '@/hooks/use-auth-redirect';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,7 +37,7 @@ type RegisterFormData = {
   phone?: string;
 };
 
-export default function RegisterPage() {
+function RegisterPageContent() {
   const [currentStep, setCurrentStep] = useState(1);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -44,6 +45,7 @@ export default function RegisterPage() {
   const { register: registerUser } = useAuth();
   const router = useRouter();
   const { t } = useTranslation('auth');
+  const { redirectAfterLogin } = useLoginRedirect();
 
   const registerSchema = z.object({
     // Organization details
@@ -55,7 +57,7 @@ export default function RegisterPage() {
     organizationCountry: z.string().min(2, t('validation.countryRequired')),
     organizationWebsite: z.string().url(t('validation.websiteInvalid')).optional().or(z.literal('')),
     organizationTaxId: z.string().optional(),
-    
+
     // Admin user details
     firstName: z.string().min(2, t('validation.firstNameTooShort', { min: 2 })),
     lastName: z.string().min(2, t('validation.lastNameTooShort', { min: 2 })),
@@ -89,8 +91,8 @@ export default function RegisterPage() {
     try {
       setIsLoading(true);
       const { confirmPassword, ...registerData } = data;
-      await registerUser(registerData as RegisterData);
-      router.push('/dashboard');
+      const result = await registerUser(registerData as RegisterData);
+      redirectAfterLogin(result.user.role);
     } catch (error: any) {
       if (error.code === 'EMAIL_EXISTS') {
         setError('email', { message: t('errors.emailExists') });
@@ -107,10 +109,10 @@ export default function RegisterPage() {
   };
 
   const nextStep = async () => {
-    const fieldsToValidate = currentStep === 1 
+    const fieldsToValidate = currentStep === 1
       ? ['organizationName', 'organizationEmail', 'organizationCountry']
       : ['firstName', 'lastName', 'email', 'password', 'confirmPassword'];
-    
+
     const isValid = await trigger(fieldsToValidate as any);
     if (isValid) {
       setCurrentStep(2);
@@ -124,7 +126,7 @@ export default function RegisterPage() {
   return (
     <div className="relative">
       <LanguageSwitcher />
-      
+
       <Card className="auth-card max-w-lg">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
@@ -134,12 +136,12 @@ export default function RegisterPage() {
           </div>
           <CardTitle className="text-2xl text-center">{t('register.title')}</CardTitle>
           <CardDescription className="text-center">
-            {currentStep === 1 
+            {currentStep === 1
               ? t('register.organizationStep')
               : t('register.adminStep')
             }
           </CardDescription>
-          
+
           {/* Progress indicator */}
           <div className="flex items-center justify-center space-x-2 mt-4">
             <div className={`w-3 h-3 rounded-full ${currentStep >= 1 ? 'bg-blue-600' : 'bg-gray-300'}`} />
@@ -147,7 +149,7 @@ export default function RegisterPage() {
             <div className={`w-3 h-3 rounded-full ${currentStep >= 2 ? 'bg-blue-600' : 'bg-gray-300'}`} />
           </div>
         </CardHeader>
-        
+
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="auth-form">
             {currentStep === 1 && (
@@ -415,7 +417,7 @@ export default function RegisterPage() {
                     <ChevronLeft className="mr-2 h-4 w-4" />
                     {t('register.back')}
                   </Button>
-                  
+
                   <Button
                     type="submit"
                     className="flex-1 btn-primary"
@@ -449,5 +451,13 @@ export default function RegisterPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <RegisterPageContent />
+    </Suspense>
   );
 }

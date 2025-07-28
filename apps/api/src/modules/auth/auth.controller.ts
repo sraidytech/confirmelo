@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Public, Auth, CurrentUser } from '../../common/decorators';
 import { PrismaService } from '../../common/database/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
@@ -30,6 +31,7 @@ export class AuthController {
     private jwtService: JwtService,
   ) {}
 
+  @Public()
   @Get('health')
   @ApiOperation({ summary: 'Health check endpoint' })
   healthCheck() {
@@ -40,6 +42,7 @@ export class AuthController {
     };
   }
 
+  @Public()
   @Post('register')
   @ApiOperation({ summary: 'Register organization and admin user' })
   @ApiResponse({ status: 201, description: 'Registration successful' })
@@ -121,6 +124,7 @@ export class AuthController {
     }
   }
 
+  @Public()
   @Post('login')
   @ApiOperation({ summary: 'Login user' })
   @ApiResponse({ status: 200, description: 'Login successful' })
@@ -178,6 +182,7 @@ export class AuthController {
     }
   }
 
+  @Public()
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token' })
   async refreshToken(@Body() body: { refreshToken: string }) {
@@ -210,9 +215,60 @@ export class AuthController {
     }
   }
 
+  @Auth()
+  @Get('me')
+  @ApiOperation({ summary: 'Get current user profile' })
+  @ApiResponse({ status: 200, description: 'User profile retrieved successfully' })
+  async getCurrentUser(@CurrentUser() user: any) {
+    // Get fresh user data from database
+    const userData = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            email: true,
+            country: true,
+            timezone: true,
+            currency: true,
+          },
+        },
+      },
+    });
+
+    if (!userData) {
+      throw new Error('User not found');
+    }
+
+    return {
+      id: userData.id,
+      email: userData.email,
+      username: userData.username,
+      firstName: userData.firstName,
+      lastName: userData.lastName,
+      phone: userData.phone,
+      avatar: userData.avatar,
+      role: userData.role,
+      status: userData.status,
+      isOnline: userData.isOnline,
+      lastActiveAt: userData.lastActiveAt,
+      organizationId: userData.organizationId,
+      organization: userData.organization,
+      createdAt: userData.createdAt,
+      updatedAt: userData.updatedAt,
+    };
+  }
+
+  @Auth()
   @Post('logout')
   @ApiOperation({ summary: 'Logout user' })
-  async logout() {
-    return { message: 'Logout successful' };
+  async logout(@CurrentUser() user: any) {
+    // TODO: Implement proper logout with session invalidation
+    return { 
+      message: 'Logout successful',
+      userId: user.id 
+    };
   }
 }

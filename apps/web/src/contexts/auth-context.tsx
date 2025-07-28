@@ -38,8 +38,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       // Try to get current user
-      const userData = await apiClient.getCurrentUser();
-      setUser(userData);
+      try {
+        const userData = await apiClient.getCurrentUser();
+        setUser(userData);
+      } catch (apiError: any) {
+        console.error('Failed to get current user:', apiError);
+        
+        // If it's a 401 error, try to refresh the token
+        if (apiError.response?.status === 401 && refreshToken) {
+          try {
+            await apiClient.refreshToken();
+            // Try again after refresh
+            const userData = await apiClient.getCurrentUser();
+            setUser(userData);
+          } catch (refreshError) {
+            console.error('Token refresh failed during initialization:', refreshError);
+            // Clear invalid tokens
+            Cookies.remove('accessToken');
+            Cookies.remove('refreshToken');
+          }
+        } else {
+          // For other errors, clear tokens
+          Cookies.remove('accessToken');
+          Cookies.remove('refreshToken');
+        }
+      }
     } catch (error) {
       console.error('Auth initialization failed:', error);
       // Clear invalid tokens
@@ -60,6 +83,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         title: 'Login Successful',
         description: `Welcome back, ${result.user.firstName}!`,
       });
+
+      return result; // Return result for redirect handling
     } catch (error) {
       const apiError = error as ApiError;
       toast({
@@ -83,6 +108,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
         title: 'Registration Successful',
         description: 'Your account has been created successfully!',
       });
+
+      return result; // Return result for redirect handling
     } catch (error) {
       const apiError = error as ApiError;
       toast({

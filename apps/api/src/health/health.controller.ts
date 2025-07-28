@@ -1,9 +1,11 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Public } from '../common/decorators';
 
 @ApiTags('Health')
 @Controller('health')
 export class HealthController {
+  @Public()
   @Get()
   @ApiOperation({ summary: 'Health check endpoint' })
   @ApiResponse({ status: 200, description: 'Service is healthy' })
@@ -11,6 +13,7 @@ export class HealthController {
     return 'OK - Confirmelo API is running';
   }
 
+  @Public()
   @Get('detailed')
   @ApiOperation({ summary: 'Detailed health check' })
   @ApiResponse({ status: 200, description: 'Detailed health information' })

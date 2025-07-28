@@ -81,10 +81,10 @@ export default function ForgotPasswordPage() {
           <CardContent className="space-y-4">
             <div className="text-sm text-gray-600 dark:text-gray-400 text-center space-y-2">
               <p>
-                If an account with that email exists, you'll receive a password reset link within a few minutes.
+                If an account with that email exists, you&apos;ll receive a password reset link within a few minutes.
               </p>
               <p>
-                Don't see the email? Check your spam folder or try again with a different email address.
+                Don&apos;t see the email? Check your spam folder or try again with a different email address.
               </p>
             </div>
 

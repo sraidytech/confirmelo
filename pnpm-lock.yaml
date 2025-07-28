@@ -33,7 +33,7 @@ importers:
         specifier: ^10.0.0
         version: 10.2.0(@nestjs/common@10.4.20)
       '@nestjs/passport':
-        specifier: ^10.0.0
+        specifier: ^10.0.3
         version: 10.0.3(@nestjs/common@10.4.20)(passport@0.6.0)
       '@nestjs/platform-express':
         specifier: ^10.0.0
@@ -115,7 +115,7 @@ importers:
         specifier: ^20.11.0
         version: 20.19.9
       '@types/passport-jwt':
-        specifier: ^3.0.9
+        specifier: ^3.0.13
         version: 3.0.13
       '@types/passport-local':
         specifier: ^1.0.35
@@ -207,6 +207,9 @@ importers:
       i18next-browser-languagedetector:
         specifier: ^7.2.0
         version: 7.2.2
+      jose:
+        specifier: ^6.0.12
+        version: 6.0.12
       js-cookie:
         specifier: ^3.0.5
         version: 3.0.5
@@ -6553,6 +6556,10 @@ packages:
   /jiti@1.21.7:
     resolution: {integrity: sha512-/imKNG4EbWNrVjoNC/1H5/9GFy+tqjGBHCaSsN+P2RnPqjsLmv6UD3Ej+Kj8nBWaRAwyk7kK5ZUc+OEatnTR3A==}
     hasBin: true
+
+  /jose@6.0.12:
+    resolution: {integrity: sha512-T8xypXs8CpmiIi78k0E+Lk7T2zlK4zDyg+o1CZ4AkOHgDg98ogdP2BeZ61lTFKFyoEwJ9RgAgN+SdM3iPgNonQ==}
+    dev: false
 
   /js-cookie@3.0.5:
     resolution: {integrity: sha512-cEiJEAEoIbWfCZYKWhVwFuvPX1gETRYPw6LlaTKoxD3s2AkXzkCjnp6h0V77ozyqj0jakteJ4YqDJT830+lVGw==}

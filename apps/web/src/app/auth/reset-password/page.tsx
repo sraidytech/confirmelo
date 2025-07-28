@@ -17,19 +17,12 @@ import { LanguageSwitcher } from '@/components/auth/language-switcher';
 import { PasswordStrength } from '@/components/auth/password-strength';
 import { apiClient } from '@/lib/api';
 import { validatePassword } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
-const resetPasswordSchema = z.object({
-  password: z.string().refine(
-    (password) => validatePassword(password).isValid,
-    'Password does not meet security requirements'
-  ),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
-
-type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;
+type ResetPasswordFormData = {
+  password: string;
+  confirmPassword: string;
+};
 
 function ResetPasswordContent() {
   const [showPassword, setShowPassword] = useState(false);
@@ -43,6 +36,18 @@ function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
+  const { t } = useTranslation('auth');
+
+  const resetPasswordSchema = z.object({
+    password: z.string().refine(
+      (password) => validatePassword(password).isValid,
+      t('validation.passwordTooWeak')
+    ),
+    confirmPassword: z.string(),
+  }).refine((data) => data.password === data.confirmPassword, {
+    message: t('validation.passwordsMustMatch'),
+    path: ["confirmPassword"],
+  });
 
   const {
     register,
@@ -87,15 +92,15 @@ function ResetPasswordContent() {
     } catch (error: any) {
       if (error.code === 'TOKEN_EXPIRED') {
         setError('password', { 
-          message: 'Reset link has expired. Please request a new one.' 
+          message: t('errors.invalidToken')
         });
       } else if (error.code === 'TOKEN_INVALID') {
         setError('password', { 
-          message: 'Invalid reset link. Please request a new one.' 
+          message: t('errors.invalidToken')
         });
       } else {
         setError('password', { 
-          message: error.message || 'Failed to reset password. Please try again.' 
+          message: error.message || t('errors.serverError')
         });
       }
     } finally {
@@ -216,9 +221,9 @@ function ResetPasswordContent() {
               <span className="text-white font-bold text-xl">C</span>
             </div>
           </div>
-          <CardTitle className="text-2xl text-center">Reset your password</CardTitle>
+          <CardTitle className="text-2xl text-center">{t('resetPassword.title')}</CardTitle>
           <CardDescription className="text-center">
-            Enter your new password below
+            {t('resetPassword.subtitle')}
           </CardDescription>
         </CardHeader>
         
@@ -226,13 +231,13 @@ function ResetPasswordContent() {
           <form onSubmit={handleSubmit(onSubmit)} className="auth-form">
             <div className="form-group">
               <Label htmlFor="password" className="form-label">
-                New Password
+                {t('resetPassword.password')}
               </Label>
               <div className="relative">
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your new password"
+                  placeholder={t('resetPassword.passwordPlaceholder')}
                   className="form-input pr-10"
                   {...register('password')}
                   disabled={isLoading}
@@ -259,13 +264,13 @@ function ResetPasswordContent() {
 
             <div className="form-group">
               <Label htmlFor="confirmPassword" className="form-label">
-                Confirm New Password
+                {t('resetPassword.confirmPassword')}
               </Label>
               <div className="relative">
                 <Input
                   id="confirmPassword"
                   type={showConfirmPassword ? 'text' : 'password'}
-                  placeholder="Confirm your new password"
+                  placeholder={t('resetPassword.confirmPasswordPlaceholder')}
                   className="form-input pr-10"
                   {...register('confirmPassword')}
                   disabled={isLoading}
@@ -296,10 +301,10 @@ function ResetPasswordContent() {
               {isLoading ? (
                 <>
                   <Loader2 className="loading-spinner" />
-                  Updating password...
+                  {t('resetPassword.submitting')}
                 </>
               ) : (
-                'Update password'
+                t('resetPassword.submit')
               )}
             </Button>
 

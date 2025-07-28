@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Loader2, Eye, EyeOff, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
@@ -18,33 +19,22 @@ import { PasswordStrength } from '@/components/auth/password-strength';
 import { RegisterData } from '@/types/auth';
 import { validatePassword } from '@/lib/utils';
 
-const registerSchema = z.object({
-  // Organization details
-  organizationName: z.string().min(2, 'Organization name must be at least 2 characters'),
-  organizationEmail: z.string().email('Please enter a valid email address'),
-  organizationPhone: z.string().optional(),
-  organizationAddress: z.string().optional(),
-  organizationCity: z.string().optional(),
-  organizationCountry: z.string().min(2, 'Country is required'),
-  organizationWebsite: z.string().url('Please enter a valid URL').optional().or(z.literal('')),
-  organizationTaxId: z.string().optional(),
-  
-  // Admin user details
-  firstName: z.string().min(2, 'First name must be at least 2 characters'),
-  lastName: z.string().min(2, 'Last name must be at least 2 characters'),
-  email: z.string().email('Please enter a valid email address'),
-  password: z.string().refine(
-    (password) => validatePassword(password).isValid,
-    'Password does not meet security requirements'
-  ),
-  confirmPassword: z.string(),
-  phone: z.string().optional(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
-
-type RegisterFormData = z.infer<typeof registerSchema>;
+type RegisterFormData = {
+  organizationName: string;
+  organizationEmail: string;
+  organizationPhone?: string;
+  organizationAddress?: string;
+  organizationCity?: string;
+  organizationCountry: string;
+  organizationWebsite?: string;
+  organizationTaxId?: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  phone?: string;
+};
 
 export default function RegisterPage() {
   const [currentStep, setCurrentStep] = useState(1);
@@ -53,6 +43,33 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const { register: registerUser } = useAuth();
   const router = useRouter();
+  const { t } = useTranslation('auth');
+
+  const registerSchema = z.object({
+    // Organization details
+    organizationName: z.string().min(2, t('validation.organizationNameTooShort', { min: 2 })),
+    organizationEmail: z.string().email(t('validation.emailInvalid')),
+    organizationPhone: z.string().optional(),
+    organizationAddress: z.string().optional(),
+    organizationCity: z.string().optional(),
+    organizationCountry: z.string().min(2, t('validation.countryRequired')),
+    organizationWebsite: z.string().url(t('validation.websiteInvalid')).optional().or(z.literal('')),
+    organizationTaxId: z.string().optional(),
+    
+    // Admin user details
+    firstName: z.string().min(2, t('validation.firstNameTooShort', { min: 2 })),
+    lastName: z.string().min(2, t('validation.lastNameTooShort', { min: 2 })),
+    email: z.string().email(t('validation.emailInvalid')),
+    password: z.string().refine(
+      (password) => validatePassword(password).isValid,
+      t('validation.passwordTooWeak')
+    ),
+    confirmPassword: z.string(),
+    phone: z.string().optional(),
+  }).refine((data) => data.password === data.confirmPassword, {
+    message: t('validation.passwordsMustMatch'),
+    path: ["confirmPassword"],
+  });
 
   const {
     register,
@@ -76,13 +93,13 @@ export default function RegisterPage() {
       router.push('/dashboard');
     } catch (error: any) {
       if (error.code === 'EMAIL_EXISTS') {
-        setError('email', { message: 'An account with this email already exists' });
+        setError('email', { message: t('errors.emailExists') });
         setCurrentStep(2); // Go back to user details step
       } else if (error.code === 'ORGANIZATION_EXISTS') {
-        setError('organizationName', { message: 'An organization with this name already exists' });
+        setError('organizationName', { message: t('errors.organizationExists') });
         setCurrentStep(1); // Go back to organization step
       } else {
-        setError('email', { message: error.message || 'Registration failed. Please try again.' });
+        setError('email', { message: error.message || t('errors.serverError') });
       }
     } finally {
       setIsLoading(false);
@@ -115,11 +132,11 @@ export default function RegisterPage() {
               <span className="text-white font-bold text-xl">C</span>
             </div>
           </div>
-          <CardTitle className="text-2xl text-center">Create your account</CardTitle>
+          <CardTitle className="text-2xl text-center">{t('register.title')}</CardTitle>
           <CardDescription className="text-center">
             {currentStep === 1 
-              ? 'Set up your organization' 
-              : 'Create your admin account'
+              ? t('register.organizationStep')
+              : t('register.adminStep')
             }
           </CardDescription>
           
@@ -137,11 +154,11 @@ export default function RegisterPage() {
               <>
                 <div className="form-group">
                   <Label htmlFor="organizationName" className="form-label">
-                    Organization Name *
+                    {t('register.organizationName')} {t('register.required')}
                   </Label>
                   <Input
                     id="organizationName"
-                    placeholder="Enter organization name"
+                    placeholder={t('register.organizationNamePlaceholder')}
                     className="form-input"
                     {...register('organizationName')}
                     disabled={isLoading}
@@ -153,12 +170,12 @@ export default function RegisterPage() {
 
                 <div className="form-group">
                   <Label htmlFor="organizationEmail" className="form-label">
-                    Organization Email *
+                    {t('register.organizationEmail')} {t('register.required')}
                   </Label>
                   <Input
                     id="organizationEmail"
                     type="email"
-                    placeholder="Enter organization email"
+                    placeholder={t('register.organizationEmailPlaceholder')}
                     className="form-input"
                     {...register('organizationEmail')}
                     disabled={isLoading}
@@ -171,12 +188,12 @@ export default function RegisterPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="form-group">
                     <Label htmlFor="organizationPhone" className="form-label">
-                      Phone
+                      {t('register.phone')}
                     </Label>
                     <Input
                       id="organizationPhone"
                       type="tel"
-                      placeholder="Phone number"
+                      placeholder={t('register.phonePlaceholder')}
                       className="form-input"
                       {...register('organizationPhone')}
                       disabled={isLoading}
@@ -185,11 +202,11 @@ export default function RegisterPage() {
 
                   <div className="form-group">
                     <Label htmlFor="organizationCountry" className="form-label">
-                      Country *
+                      {t('register.country')} {t('register.required')}
                     </Label>
                     <Input
                       id="organizationCountry"
-                      placeholder="Country"
+                      placeholder={t('register.countryPlaceholder')}
                       className="form-input"
                       {...register('organizationCountry')}
                       disabled={isLoading}
@@ -202,11 +219,11 @@ export default function RegisterPage() {
 
                 <div className="form-group">
                   <Label htmlFor="organizationAddress" className="form-label">
-                    Address
+                    {t('register.address')}
                   </Label>
                   <Input
                     id="organizationAddress"
-                    placeholder="Enter address"
+                    placeholder={t('register.addressPlaceholder')}
                     className="form-input"
                     {...register('organizationAddress')}
                     disabled={isLoading}
@@ -216,11 +233,11 @@ export default function RegisterPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="form-group">
                     <Label htmlFor="organizationCity" className="form-label">
-                      City
+                      {t('register.city')}
                     </Label>
                     <Input
                       id="organizationCity"
-                      placeholder="City"
+                      placeholder={t('register.cityPlaceholder')}
                       className="form-input"
                       {...register('organizationCity')}
                       disabled={isLoading}
@@ -229,12 +246,12 @@ export default function RegisterPage() {
 
                   <div className="form-group">
                     <Label htmlFor="organizationWebsite" className="form-label">
-                      Website
+                      {t('register.website')}
                     </Label>
                     <Input
                       id="organizationWebsite"
                       type="url"
-                      placeholder="https://example.com"
+                      placeholder={t('register.websitePlaceholder')}
                       className="form-input"
                       {...register('organizationWebsite')}
                       disabled={isLoading}
@@ -251,7 +268,7 @@ export default function RegisterPage() {
                   className="btn-primary"
                   disabled={isLoading}
                 >
-                  Next Step
+                  {t('register.nextStep')}
                   <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>
               </>
@@ -262,11 +279,11 @@ export default function RegisterPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="form-group">
                     <Label htmlFor="firstName" className="form-label">
-                      First Name *
+                      {t('register.firstName')} {t('register.required')}
                     </Label>
                     <Input
                       id="firstName"
-                      placeholder="First name"
+                      placeholder={t('register.firstNamePlaceholder')}
                       className="form-input"
                       {...register('firstName')}
                       disabled={isLoading}
@@ -278,11 +295,11 @@ export default function RegisterPage() {
 
                   <div className="form-group">
                     <Label htmlFor="lastName" className="form-label">
-                      Last Name *
+                      {t('register.lastName')} {t('register.required')}
                     </Label>
                     <Input
                       id="lastName"
-                      placeholder="Last name"
+                      placeholder={t('register.lastNamePlaceholder')}
                       className="form-input"
                       {...register('lastName')}
                       disabled={isLoading}
@@ -295,12 +312,12 @@ export default function RegisterPage() {
 
                 <div className="form-group">
                   <Label htmlFor="email" className="form-label">
-                    Email Address *
+                    {t('login.email')} {t('register.required')}
                   </Label>
                   <Input
                     id="email"
                     type="email"
-                    placeholder="Enter your email"
+                    placeholder={t('register.emailPlaceholder')}
                     className="form-input"
                     {...register('email')}
                     disabled={isLoading}
@@ -312,12 +329,12 @@ export default function RegisterPage() {
 
                 <div className="form-group">
                   <Label htmlFor="phone" className="form-label">
-                    Phone Number
+                    {t('register.phone')}
                   </Label>
                   <Input
                     id="phone"
                     type="tel"
-                    placeholder="Enter your phone number"
+                    placeholder={t('register.phoneNumberPlaceholder')}
                     className="form-input"
                     {...register('phone')}
                     disabled={isLoading}
@@ -326,13 +343,13 @@ export default function RegisterPage() {
 
                 <div className="form-group">
                   <Label htmlFor="password" className="form-label">
-                    Password *
+                    {t('login.password')} {t('register.required')}
                   </Label>
                   <div className="relative">
                     <Input
                       id="password"
                       type={showPassword ? 'text' : 'password'}
-                      placeholder="Create a strong password"
+                      placeholder={t('register.passwordPlaceholder')}
                       className="form-input pr-10"
                       {...register('password')}
                       disabled={isLoading}
@@ -358,13 +375,13 @@ export default function RegisterPage() {
 
                 <div className="form-group">
                   <Label htmlFor="confirmPassword" className="form-label">
-                    Confirm Password *
+                    {t('register.confirmPassword')} {t('register.required')}
                   </Label>
                   <div className="relative">
                     <Input
                       id="confirmPassword"
                       type={showConfirmPassword ? 'text' : 'password'}
-                      placeholder="Confirm your password"
+                      placeholder={t('register.confirmPasswordPlaceholder')}
                       className="form-input pr-10"
                       {...register('confirmPassword')}
                       disabled={isLoading}
@@ -396,7 +413,7 @@ export default function RegisterPage() {
                     disabled={isLoading}
                   >
                     <ChevronLeft className="mr-2 h-4 w-4" />
-                    Back
+                    {t('register.back')}
                   </Button>
                   
                   <Button
@@ -407,10 +424,10 @@ export default function RegisterPage() {
                     {isLoading ? (
                       <>
                         <Loader2 className="loading-spinner" />
-                        Creating...
+                        {t('register.submitting')}
                       </>
                     ) : (
-                      'Create Account'
+                      t('register.submit')
                     )}
                   </Button>
                 </div>
@@ -419,12 +436,12 @@ export default function RegisterPage() {
 
             <div className="text-center">
               <span className="text-sm text-gray-600 dark:text-gray-400">
-                Already have an account?{' '}
+                {t('register.haveAccount')}{' '}
                 <Link
                   href="/auth/login"
                   className="text-blue-600 hover:text-blue-500 dark:text-blue-400 font-medium"
                 >
-                  Sign in
+                  {t('register.signIn')}
                 </Link>
               </span>
             </div>

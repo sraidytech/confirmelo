@@ -1,0 +1,59 @@
+{
+  "brand": {
+    "name": "Confirmelo",
+    "tagline": "Rationalisez vos confirmations de commandes"
+  },
+  "navigation": {
+    "dashboard": "Tableau de bord",
+    "orders": "Commandes",
+    "customers": "Clients",
+    "analytics": "Analyses",
+    "settings": "Paramètres",
+    "profile": "Profil",
+    "logout": "Déconnexion"
+  },
+  "actions": {
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "create": "Créer",
+    "update": "Mettre à jour",
+    "submit": "Soumettre",
+    "close": "Fermer",
+    "confirm": "Confirmer",
+    "loading": "Chargement...",
+    "retry": "Réessayer",
+    "refresh": "Actualiser"
+  },
+  "status": {
+    "active": "Actif",
+    "inactive": "Inactif",
+    "pending": "En attente",
+    "suspended": "Suspendu",
+    "online": "En ligne",
+    "offline": "Hors ligne"
+  },
+  "messages": {
+    "success": "Opération terminée avec succès",
+    "error": "Une erreur s'est produite",
+    "warning": "Avertissement",
+    "info": "Information",
+    "noData": "Aucune donnée disponible",
+    "confirmDelete": "Êtes-vous sûr de vouloir supprimer cet élément ?",
+    "unsavedChanges": "Vous avez des modifications non enregistrées. Êtes-vous sûr de vouloir partir ?"
+  },
+  "time": {
+    "now": "Maintenant",
+    "today": "Aujourd'hui",
+    "yesterday": "Hier",
+    "lastWeek": "La semaine dernière",
+    "lastMonth": "Le mois dernier",
+    "never": "Jamais"
+  },
+  "language": {
+    "english": "English",
+    "french": "Français",
+    "switchTo": "Passer à {{language}}"
+  }
+}

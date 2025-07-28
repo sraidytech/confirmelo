@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
@@ -16,19 +17,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { LanguageSwitcher } from '@/components/auth/language-switcher';
 import { LoginCredentials } from '@/types/auth';
 
-const loginSchema = z.object({
-  email: z.string().email('Please enter a valid email address'),
-  password: z.string().min(1, 'Password is required'),
-  rememberMe: z.boolean().optional(),
-});
-
-type LoginFormData = z.infer<typeof loginSchema>;
+type LoginFormData = {
+  email: string;
+  password: string;
+  rememberMe?: boolean;
+};
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
   const router = useRouter();
+  const { t } = useTranslation('auth');
+
+  const loginSchema = z.object({
+    email: z.string().email(t('validation.emailInvalid')),
+    password: z.string().min(1, t('validation.passwordRequired')),
+    rememberMe: z.boolean().optional(),
+  });
 
   const {
     register,
@@ -52,14 +58,15 @@ export default function LoginPage() {
     } catch (error: any) {
       // Handle specific error cases
       if (error.code === 'INVALID_CREDENTIALS') {
-        setError('email', { message: 'Invalid email or password' });
-        setError('password', { message: 'Invalid email or password' });
+        const message = t('errors.invalidCredentials');
+        setError('email', { message });
+        setError('password', { message });
       } else if (error.code === 'ACCOUNT_LOCKED') {
-        setError('email', { message: 'Account is temporarily locked due to too many failed attempts' });
+        setError('email', { message: t('errors.accountLocked') });
       } else if (error.code === 'ACCOUNT_SUSPENDED') {
-        setError('email', { message: 'Account is suspended. Please contact support.' });
+        setError('email', { message: t('errors.accountSuspended') });
       } else {
-        setError('email', { message: error.message || 'Login failed. Please try again.' });
+        setError('email', { message: error.message || t('errors.serverError') });
       }
     } finally {
       setIsLoading(false);
@@ -77,9 +84,9 @@ export default function LoginPage() {
               <span className="text-white font-bold text-xl">C</span>
             </div>
           </div>
-          <CardTitle className="text-2xl text-center">Welcome back</CardTitle>
+          <CardTitle className="text-2xl text-center">{t('login.title')}</CardTitle>
           <CardDescription className="text-center">
-            Sign in to your Confirmelo account
+            {t('login.subtitle')}
           </CardDescription>
         </CardHeader>
         
@@ -87,12 +94,12 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="auth-form">
             <div className="form-group">
               <Label htmlFor="email" className="form-label">
-                Email address
+                {t('login.email')}
               </Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="Enter your email"
+                placeholder={t('login.emailPlaceholder')}
                 className="form-input"
                 {...register('email')}
                 disabled={isLoading}
@@ -104,13 +111,13 @@ export default function LoginPage() {
 
             <div className="form-group">
               <Label htmlFor="password" className="form-label">
-                Password
+                {t('login.password')}
               </Label>
               <div className="relative">
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
+                  placeholder={t('login.passwordPlaceholder')}
                   className="form-input pr-10"
                   {...register('password')}
                   disabled={isLoading}
@@ -143,7 +150,7 @@ export default function LoginPage() {
                   disabled={isLoading}
                 />
                 <Label htmlFor="rememberMe" className="ml-2 text-sm text-gray-600 dark:text-gray-400">
-                  Remember me
+                  {t('login.rememberMe')}
                 </Label>
               </div>
               
@@ -151,7 +158,7 @@ export default function LoginPage() {
                 href="/auth/forgot-password"
                 className="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-400"
               >
-                Forgot password?
+                {t('login.forgotPassword')}
               </Link>
             </div>
 
@@ -163,21 +170,21 @@ export default function LoginPage() {
               {isLoading ? (
                 <>
                   <Loader2 className="loading-spinner" />
-                  Signing in...
+                  {t('login.submitting')}
                 </>
               ) : (
-                'Sign in'
+                t('login.submit')
               )}
             </Button>
 
             <div className="text-center">
               <span className="text-sm text-gray-600 dark:text-gray-400">
-                Don't have an account?{' '}
+                {t('login.noAccount')}{' '}
                 <Link
                   href="/auth/register"
                   className="text-blue-600 hover:text-blue-500 dark:text-blue-400 font-medium"
                 >
-                  Sign up
+                  {t('login.signUp')}
                 </Link>
               </span>
             </div>

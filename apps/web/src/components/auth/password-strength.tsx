@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslation } from 'react-i18next';
 import { validatePassword } from '@/lib/utils';
 
 interface PasswordStrengthProps {
@@ -8,6 +9,8 @@ interface PasswordStrengthProps {
 }
 
 export function PasswordStrength({ password, className }: PasswordStrengthProps) {
+  const { t } = useTranslation('auth');
+  
   if (!password) return null;
 
   const { strength, errors } = validatePassword(password);
@@ -44,12 +47,14 @@ export function PasswordStrength({ password, className }: PasswordStrengthProps)
         <span className="text-sm text-gray-600 dark:text-gray-400">
           Password strength:
         </span>
-        <span className={`text-sm font-medium capitalize ${
+        <span className={`text-sm font-medium ${
           strength === 'weak' ? 'text-red-600' :
           strength === 'medium' ? 'text-yellow-600' :
           'text-green-600'
         }`}>
-          {strength}
+          {strength === 'weak' && t('passwordStrength.weak')}
+          {strength === 'medium' && t('passwordStrength.fair')}
+          {strength === 'strong' && t('passwordStrength.strong')}
         </span>
       </div>
       

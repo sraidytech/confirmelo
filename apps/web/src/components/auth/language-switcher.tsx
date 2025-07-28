@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 
 interface LanguageSwitcherProps {
@@ -8,35 +8,29 @@ interface LanguageSwitcherProps {
 }
 
 export function LanguageSwitcher({ className }: LanguageSwitcherProps) {
-  const [currentLanguage, setCurrentLanguage] = useState('en');
-
-  useEffect(() => {
-    // Get saved language preference
-    const savedLanguage = localStorage.getItem('language') || 'en';
-    setCurrentLanguage(savedLanguage);
-  }, []);
+  const { i18n, t } = useTranslation('common');
 
   const switchLanguage = (language: string) => {
-    setCurrentLanguage(language);
-    localStorage.setItem('language', language);
-    // TODO: Integrate with i18next when implementing task 9.2
+    i18n.changeLanguage(language);
   };
 
   return (
-    <div className={`language-switcher ${className}`}>
+    <div className={`language-switcher flex gap-1 ${className}`}>
       <Button
-        variant={currentLanguage === 'en' ? 'default' : 'outline'}
+        variant={i18n.language === 'en' ? 'default' : 'outline'}
         size="sm"
         onClick={() => switchLanguage('en')}
         className="language-btn"
+        title={t('language.switchTo', { language: t('language.english') })}
       >
         EN
       </Button>
       <Button
-        variant={currentLanguage === 'fr' ? 'default' : 'outline'}
+        variant={i18n.language === 'fr' ? 'default' : 'outline'}
         size="sm"
         onClick={() => switchLanguage('fr')}
         className="language-btn"
+        title={t('language.switchTo', { language: t('language.french') })}
       >
         FR
       </Button>

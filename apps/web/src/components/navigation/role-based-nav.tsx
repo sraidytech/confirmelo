@@ -19,7 +19,7 @@ const iconMap = {
   '/dashboard': LayoutDashboard,
   '/orders': ShoppingCart,
   '/teams': Users,
-  '/users': UserCheck,
+  '/dashboard/admin/users': UserCheck,
   '/analytics': BarChart3,
   '/clients': Building2,
   '/settings': Settings,

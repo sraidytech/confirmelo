@@ -10,29 +10,34 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
-  // Security middleware
-  app.use(helmet());
-
-  // Rate limiting
-  app.use(
-    rateLimit({
-      windowMs: configService.get('RATE_LIMIT_WINDOW_MS', 60000),
-      max: configService.get('RATE_LIMIT_MAX_REQUESTS', 10),
-      message: 'Too many requests from this IP, please try again later.',
-    }),
-  );
-
-  // CORS configuration
+  // CORS configuration - MUST be first to handle preflight requests
   app.enableCors({
-    origin: [
-      configService.get('CORS_ORIGIN', 'http://localhost:3000'),
-      'http://localhost:3000',
-      'http://web:3000',
-    ],
+    origin: true, // Allow all origins in development
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-ID'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-ID', 'Accept', 'Origin', 'X-Requested-With'],
+    exposedHeaders: ['X-Correlation-ID'],
+    preflightContinue: false,
+    optionsSuccessStatus: 200,
   });
+
+  // Security middleware
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginOpenerPolicy: { policy: "unsafe-none" },
+  }));
+
+  // Rate limiting (disabled in development)
+  if (configService.get('NODE_ENV') !== 'development') {
+    app.use(
+      rateLimit({
+        windowMs: configService.get('RATE_LIMIT_WINDOW_MS', 60000),
+        max: configService.get('RATE_LIMIT_MAX_REQUESTS', 100),
+        message: 'Too many requests from this IP, please try again later.',
+        skip: (req) => req.method === 'OPTIONS', // Skip preflight requests
+      }),
+    );
+  }
 
   // Global validation pipe
   app.useGlobalPipes(

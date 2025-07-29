@@ -32,42 +32,63 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const accessToken = Cookies.get('accessToken');
       const refreshToken = Cookies.get('refreshToken');
 
+      console.log('Auth initialization - tokens:', { 
+        hasAccessToken: !!accessToken, 
+        hasRefreshToken: !!refreshToken 
+      });
+
       if (!accessToken && !refreshToken) {
+        console.log('No tokens found, skipping auth initialization');
         setLoading(false);
         return;
       }
 
       // Try to get current user
       try {
+        console.log('Attempting to get current user...');
         const userData = await apiClient.getCurrentUser();
+        console.log('Successfully got user data:', userData);
         setUser(userData);
       } catch (apiError: any) {
         console.error('Failed to get current user:', apiError);
         
+        // Only handle authentication errors, ignore network errors
+        if (apiError.type === 'NETWORK_ERROR') {
+          console.log('Network error during auth initialization, keeping tokens');
+          setLoading(false);
+          return;
+        }
+        
         // If it's a 401 error, try to refresh the token
         if (apiError.response?.status === 401 && refreshToken) {
+          console.log('Got 401, attempting token refresh...');
           try {
             await apiClient.refreshToken();
+            console.log('Token refresh successful, retrying user fetch...');
             // Try again after refresh
             const userData = await apiClient.getCurrentUser();
+            console.log('Successfully got user data after refresh:', userData);
             setUser(userData);
-          } catch (refreshError) {
+          } catch (refreshError: any) {
             console.error('Token refresh failed during initialization:', refreshError);
-            // Clear invalid tokens
-            Cookies.remove('accessToken');
-            Cookies.remove('refreshToken');
+            // Only clear tokens if we're sure they're invalid, not on network errors
+            if (refreshError.type !== 'NETWORK_ERROR' && 
+                (refreshError.response?.status === 401 || refreshError.response?.status === 403)) {
+              console.log('Clearing tokens due to auth failure');
+              Cookies.remove('accessToken');
+              Cookies.remove('refreshToken');
+            }
           }
-        } else {
-          // For other errors, clear tokens
+        } else if (apiError.response?.status === 401 || apiError.response?.status === 403) {
+          // Only clear tokens for confirmed auth errors, not network errors
+          console.log('Clearing tokens due to auth error');
           Cookies.remove('accessToken');
           Cookies.remove('refreshToken');
         }
       }
     } catch (error) {
       console.error('Auth initialization failed:', error);
-      // Clear invalid tokens
-      Cookies.remove('accessToken');
-      Cookies.remove('refreshToken');
+      // Don't clear tokens on network errors
     } finally {
       setLoading(false);
     }

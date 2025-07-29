@@ -7,7 +7,14 @@ import {
   PasswordResetRequest,
   PasswordResetConfirm,
   ChangePasswordRequest,
-  ApiError 
+  ApiError,
+  UpdateProfileDto,
+  UpdateUserStatusDto,
+  UserPresence,
+  BulkUserPresence,
+  OnlineUsersResponse,
+  UserActivitySummary,
+  AvatarUploadResponse
 } from '@/types/auth';
 import { generateCorrelationId } from './utils';
 
@@ -50,6 +57,7 @@ class ApiClient {
       async (error: AxiosError) => {
         const originalRequest = error.config as any;
 
+        // Only handle 401 errors, not network errors
         if (error.response?.status === 401 && !originalRequest._retry) {
           originalRequest._retry = true;
 
@@ -58,10 +66,13 @@ class ApiClient {
             originalRequest.headers.Authorization = `Bearer ${newToken}`;
             return this.client(originalRequest);
           } catch (refreshError) {
-            // Refresh failed, redirect to login
-            this.clearTokens();
-            if (typeof window !== 'undefined') {
-              window.location.href = '/auth/login';
+            // Only redirect on confirmed auth errors, not network errors
+            const apiError = this.handleApiError(refreshError as AxiosError);
+            if (apiError.type !== 'NETWORK_ERROR') {
+              this.clearTokens();
+              if (typeof window !== 'undefined') {
+                window.location.href = '/auth/login';
+              }
             }
             return Promise.reject(refreshError);
           }
@@ -228,6 +239,116 @@ class ApiClient {
       return true;
     } catch (error) {
       return false;
+    }
+  }
+
+  // User Management endpoints
+  async getUserProfile() {
+    try {
+      const response = await this.client.get('/users/profile');
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async updateProfile(data: any) {
+    try {
+      const response = await this.client.put('/users/profile', data);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async changeUserPassword(data: { currentPassword: string; newPassword: string }) {
+    try {
+      const response = await this.client.post('/users/change-password', data);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async updateAvatar(avatarUrl: string) {
+    try {
+      const response = await this.client.put('/users/avatar', { avatarUrl });
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async updateActivity() {
+    try {
+      const response = await this.client.post('/users/activity');
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getOnlineStatus() {
+    try {
+      const response = await this.client.get('/users/online-status');
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async updateUserStatus(userId: string, data: any) {
+    try {
+      const response = await this.client.put(`/users/${userId}/status`, data);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getUserPresence(userId: string) {
+    try {
+      const response = await this.client.get(`/users/${userId}/presence`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getBulkUserPresence(userIds: string[]) {
+    try {
+      const response = await this.client.post('/users/presence/bulk', { userIds });
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getOnlineUsersInOrganization() {
+    try {
+      const response = await this.client.get('/users/organization/online');
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getUserActivitySummary(userId: string) {
+    try {
+      const response = await this.client.get(`/users/${userId}/activity-summary`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  // Admin endpoints
+  async getAdminUsers() {
+    try {
+      const response = await this.client.get('/admin/users');
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
     }
   }
 }

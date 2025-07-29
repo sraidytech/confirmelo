@@ -50,7 +50,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   // Rate limiting methods
   async checkRateLimit(key: string, limit: number, windowMs: number): Promise<{ allowed: boolean; remaining: number }> {
     const current = await this.client.incr(`rate_limit:${key}`);
-    
+
     if (current === 1) {
       await this.client.expire(`rate_limit:${key}`, Math.ceil(windowMs / 1000));
     }

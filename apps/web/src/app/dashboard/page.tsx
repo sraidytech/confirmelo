@@ -3,52 +3,17 @@
 import { useAuth } from '@/contexts/auth-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ProtectedRoute, ConditionalRender } from '@/components/auth/protected-route';
-import { SidebarNav } from '@/components/navigation/role-based-nav';
+import { ConditionalRender } from '@/components/auth/protected-route';
 import { UserRole } from '@/types/auth';
 import { getRoleDisplayName, getRolePermissions } from '@/lib/auth-utils';
-import { LogOut, User, Building, Shield } from 'lucide-react';
+import { User, Building, Shield } from 'lucide-react';
 
 export default function DashboardPage() {
-    const { user, logout } = useAuth();
-
-    const handleLogout = async () => {
-        await logout();
-    };
+    const { user } = useAuth();
 
     return (
-        <ProtectedRoute>
-            <div className="flex min-h-screen bg-gray-50 dark:bg-gray-900">
-                <SidebarNav />
-                
-                <div className="flex-1">
-                    <header className="bg-white dark:bg-gray-800 shadow">
-                        <div className="px-6 py-4">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                                        Dashboard
-                                    </h1>
-                                    <p className="text-gray-600 dark:text-gray-400">
-                                        Welcome back, {user?.firstName}!
-                                    </p>
-                                </div>
-
-                                <Button
-                                    onClick={handleLogout}
-                                    variant="outline"
-                                    size="sm"
-                                    className="flex items-center"
-                                >
-                                    <LogOut className="h-4 w-4 mr-2" />
-                                    Logout
-                                </Button>
-                            </div>
-                        </div>
-                    </header>
-
-                    <main className="p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {/* User Info Card */}
                             <Card>
                                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -188,9 +153,9 @@ export default function DashboardPage() {
                                     </ConditionalRender>
                                 </CardContent>
                             </Card>
-                        </div>
+            </div>
 
-                        {/* Welcome Message */}
+            {/* Welcome Message */}
                         <Card className="mt-6">
                             <CardHeader>
                                 <CardTitle>Welcome to Confirmelo!</CardTitle>
@@ -217,9 +182,6 @@ export default function DashboardPage() {
                                 </div>
                             </CardContent>
                         </Card>
-                    </main>
-                </div>
-            </div>
-        </ProtectedRoute>
+        </div>
     );
 }

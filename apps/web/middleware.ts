@@ -46,7 +46,7 @@ const ROLE_ROUTES: Record<string, UserRole[]> = {
     UserRole.CLIENT_USER,
   ],
   '/settings': [UserRole.SUPER_ADMIN, UserRole.ADMIN],
-  '/users': [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER],
+  '/dashboard/admin/users': [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER],
   '/clients': [UserRole.SUPER_ADMIN, UserRole.ADMIN],
 };
 

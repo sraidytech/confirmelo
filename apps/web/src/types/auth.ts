@@ -144,3 +144,60 @@ export interface PasswordStrength {
   strength: 'weak' | 'medium' | 'strong';
   feedback: string[];
 }
+
+// User Management Types
+export interface UpdateProfileDto {
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface UpdateUserStatusDto {
+  status: UserStatus;
+  reason?: string;
+}
+
+export interface UserPresence {
+  userId: string;
+  isOnline: boolean;
+  lastActiveAt: Date;
+  status: UserStatus;
+}
+
+export interface BulkUserPresence {
+  users: UserPresence[];
+  timestamp: Date;
+}
+
+export interface OnlineUsersResponse {
+  onlineUserIds: string[];
+  totalOnline: number;
+  timestamp: Date;
+}
+
+export interface UserActivitySummary {
+  userId: string;
+  isOnline: boolean;
+  lastActiveAt: Date;
+  activeSessions: number;
+  status: UserStatus;
+  lastIpAddress?: string;
+  lastUserAgent?: string;
+}
+
+export interface SessionInfo {
+  id: string;
+  ipAddress?: string;
+  userAgent?: string;
+  createdAt: string;
+  expiresAt: string;
+  isActive: boolean;
+}
+
+export interface AvatarUploadResponse {
+  success: boolean;
+  message: string;
+  avatarUrl: string;
+}

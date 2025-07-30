@@ -1,5 +1,7 @@
-import { IsOptional, IsBoolean, IsString } from 'class-validator';
+import { IsOptional, IsBoolean, IsString, MinLength, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { NoSqlInjection, NoXss } from '../../../common/validation/decorators/validation.decorators';
 
 export class LogoutDto {
   @ApiProperty({
@@ -8,7 +10,12 @@ export class LogoutDto {
     example: 'session_123456789',
   })
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'Session ID must be a string' })
+  @MinLength(10, { message: 'Invalid session ID format' })
+  @MaxLength(128, { message: 'Session ID is too long' })
+  @NoSqlInjection()
+  @NoXss()
+  @Transform(({ value }) => value?.trim())
   sessionId?: string;
 
   @ApiProperty({
@@ -18,7 +25,7 @@ export class LogoutDto {
     example: false,
   })
   @IsOptional()
-  @IsBoolean()
+  @IsBoolean({ message: 'Logout from all must be a boolean value' })
   logoutFromAll?: boolean;
 }
 

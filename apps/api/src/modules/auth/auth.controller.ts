@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, Delete, UseGuards, UsePipes } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Public, Auth, CurrentUser } from '../../common/decorators';
 import { PrismaService } from '../../common/database/prisma.service';
@@ -6,6 +6,8 @@ import { RedisService } from '../../common/redis/redis.service';
 import { RealtimeNotificationService } from '../websocket/services/realtime-notification.service';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { LogoutDto, LogoutResponse } from './dto/logout.dto';
+import { LoginDto, LoginResponseDto, RefreshTokenDto, RefreshTokenResponseDto } from './dto/login.dto';
+import { RegisterOrganizationDto, RegisterResponseDto } from './dto/register.dto';
 import { 
   GetSessionsDto, 
   TerminateSessionDto, 
@@ -15,26 +17,13 @@ import {
   SessionActivityDto
 } from './dto/session-management.dto';
 import { SessionManagementService } from './services/session-management.service';
+import { AuthValidationPipe } from '../../common/validation/pipes/enhanced-validation.pipe';
+import { RateLimitGuard } from '../../common/validation/guards/rate-limit.guard';
+import { LoginRateLimit, RegisterRateLimit, AuthRateLimit } from '../../common/validation/decorators/rate-limit.decorator';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 
-interface RegisterDto {
-  // Organization details
-  organizationName: string;
-  organizationEmail: string;
-  organizationCountry: string;
-  
-  // Admin user details
-  firstName: string;
-  lastName: string;
-  email: string;
-  password: string;
-}
 
-interface LoginDto {
-  email: string;
-  password: string;
-}
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -61,15 +50,18 @@ export class AuthController {
 
   @Public()
   @Post('register')
+  @UseGuards(RateLimitGuard)
+  @RegisterRateLimit()
+  @UsePipes(AuthValidationPipe)
   @ApiOperation({ summary: 'Register organization and admin user' })
-  @ApiResponse({ status: 201, description: 'Registration successful' })
-  async register(@Body() dto: RegisterDto) {
+  @ApiResponse({ status: 201, description: 'Registration successful', type: RegisterResponseDto })
+  async register(@Body() dto: RegisterOrganizationDto): Promise<RegisterResponseDto> {
     try {
       // Hash password
-      const hashedPassword = await bcrypt.hash(dto.password, 12);
+      const hashedPassword = await bcrypt.hash(dto.adminUser.password, 12);
       
       // Generate organization code
-      const orgCode = dto.organizationName
+      const orgCode = dto.organization.name
         .toUpperCase()
         .replace(/[^A-Z0-9]/g, '')
         .substring(0, 6) + Math.floor(Math.random() * 1000);
@@ -79,23 +71,29 @@ export class AuthController {
         // Create organization
         const organization = await tx.organization.create({
           data: {
-            name: dto.organizationName,
+            name: dto.organization.name,
             code: orgCode,
-            email: dto.organizationEmail,
-            country: dto.organizationCountry,
+            email: dto.organization.email,
+            phone: dto.organization.phone,
+            address: dto.organization.address,
+            city: dto.organization.city,
+            website: dto.organization.website,
+            taxId: dto.organization.taxId,
+            country: 'MA', // Default to Morocco
             timezone: 'UTC',
-            currency: 'USD',
+            currency: 'MAD',
           },
         });
 
         // Create admin user
         const user = await tx.user.create({
           data: {
-            email: dto.email,
-            username: dto.email,
+            email: dto.adminUser.email,
+            username: dto.adminUser.username,
             password: hashedPassword,
-            firstName: dto.firstName,
-            lastName: dto.lastName,
+            firstName: dto.adminUser.firstName,
+            lastName: dto.adminUser.lastName,
+            phone: dto.adminUser.phone,
             role: 'ADMIN',
             status: 'ACTIVE',
             organizationId: organization.id,
@@ -117,22 +115,22 @@ export class AuthController {
       const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
 
       return {
+        success: true,
+        message: 'Organization registered successfully',
+        organization: {
+          id: result.organization.id,
+          name: result.organization.name,
+          code: result.organization.code,
+          email: result.organization.email,
+        },
         user: {
           id: result.user.id,
           email: result.user.email,
+          username: result.user.username,
           firstName: result.user.firstName,
           lastName: result.user.lastName,
           role: result.user.role,
           status: result.user.status,
-          organization: {
-            id: result.organization.id,
-            name: result.organization.name,
-            code: result.organization.code,
-          },
-        },
-        tokens: {
-          accessToken,
-          refreshToken,
         },
       };
     } catch (error) {
@@ -143,9 +141,12 @@ export class AuthController {
 
   @Public()
   @Post('login')
+  @UseGuards(RateLimitGuard)
+  @LoginRateLimit()
+  @UsePipes(AuthValidationPipe)
   @ApiOperation({ summary: 'Login user' })
-  @ApiResponse({ status: 200, description: 'Login successful' })
-  async login(@Body() dto: LoginDto) {
+  @ApiResponse({ status: 200, description: 'Login successful', type: LoginResponseDto })
+  async login(@Body() dto: LoginDto): Promise<LoginResponseDto> {
     try {
       // Find user
       const user = await this.prisma.user.findUnique({
@@ -172,26 +173,33 @@ export class AuthController {
       };
       
       const accessToken = this.jwtService.sign(payload, { expiresIn: '15m' });
-      const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
+      const refreshToken = this.jwtService.sign(payload, { 
+        expiresIn: dto.rememberMe ? '30d' : '7d' 
+      });
+
+      // Create session record
+      const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
       return {
+        success: true,
+        message: 'Login successful',
         user: {
           id: user.id,
           email: user.email,
+          username: user.username,
           firstName: user.firstName,
           lastName: user.lastName,
           role: user.role,
           status: user.status,
-          organization: user.organization ? {
-            id: user.organization.id,
-            name: user.organization.name,
-            code: user.organization.code,
-          } : null,
+          organizationId: user.organizationId,
+          isOnline: true,
         },
         tokens: {
           accessToken,
           refreshToken,
+          expiresIn: 15 * 60, // 15 minutes in seconds
         },
+        sessionId,
       };
     } catch (error) {
       console.error('Login error:', error);
@@ -201,8 +209,12 @@ export class AuthController {
 
   @Public()
   @Post('refresh')
+  @UseGuards(RateLimitGuard)
+  @AuthRateLimit()
+  @UsePipes(AuthValidationPipe)
   @ApiOperation({ summary: 'Refresh access token' })
-  async refreshToken(@Body() body: { refreshToken: string }) {
+  @ApiResponse({ status: 200, description: 'Token refreshed successfully', type: RefreshTokenResponseDto })
+  async refreshToken(@Body() body: RefreshTokenDto): Promise<RefreshTokenResponseDto> {
     try {
       const payload = this.jwtService.verify(body.refreshToken);
       
@@ -221,9 +233,12 @@ export class AuthController {
       }, { expiresIn: '7d' });
 
       return {
+        success: true,
+        message: 'Token refreshed successfully',
         tokens: {
           accessToken: newAccessToken,
           refreshToken: newRefreshToken,
+          expiresIn: 15 * 60, // 15 minutes in seconds
         },
       };
     } catch (error) {
@@ -280,6 +295,9 @@ export class AuthController {
 
   @Auth()
   @Post('logout')
+  @UseGuards(RateLimitGuard)
+  @AuthRateLimit()
+  @UsePipes(AuthValidationPipe)
   @ApiOperation({ summary: 'Logout user' })
   @ApiResponse({ status: 200, description: 'Logout successful', type: LogoutResponse })
   async logout(@CurrentUser() user: any, @Body() body: LogoutDto) {

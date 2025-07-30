@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsBoolean, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, IsDateString, MinLength, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { NoSqlInjection, NoXss } from '../../../common/validation/decorators/validation.decorators';
 
 export class GetSessionsDto {
   @ApiProperty({ description: 'Include expired sessions', required: false })
@@ -10,12 +12,21 @@ export class GetSessionsDto {
 
 export class TerminateSessionDto {
   @ApiProperty({ description: 'Session ID to terminate' })
-  @IsString()
+  @IsString({ message: 'Session ID must be a string' })
+  @MinLength(10, { message: 'Invalid session ID format' })
+  @MaxLength(128, { message: 'Session ID is too long' })
+  @NoSqlInjection()
+  @NoXss()
+  @Transform(({ value }) => value?.trim())
   sessionId: string;
 
   @ApiProperty({ description: 'Reason for termination', required: false })
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'Reason must be a string' })
+  @MaxLength(255, { message: 'Reason must be no more than 255 characters long' })
+  @NoSqlInjection()
+  @NoXss()
+  @Transform(({ value }) => value?.trim())
   reason?: string;
 }
 

@@ -1,19 +1,26 @@
 import { IsEmail, IsString, IsBoolean, IsOptional, MinLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { NoSqlInjection, NoXss } from '../../../common/validation/decorators/validation.decorators';
 
 export class LoginDto {
   @ApiProperty({ example: 'admin@example.com', description: 'User email address' })
-  @IsEmail()
+  @IsEmail({}, { message: 'Please provide a valid email address' })
+  @NoSqlInjection()
+  @NoXss()
+  @Transform(({ value }) => value?.toLowerCase()?.trim())
   email: string;
 
   @ApiProperty({ example: 'SecurePassword123!', description: 'User password' })
-  @IsString()
-  @MinLength(1)
+  @IsString({ message: 'Password must be a string' })
+  @MinLength(1, { message: 'Password is required' })
+  @NoSqlInjection()
+  @NoXss()
   password: string;
 
   @ApiPropertyOptional({ example: true, description: 'Remember me for extended session' })
   @IsOptional()
-  @IsBoolean()
+  @IsBoolean({ message: 'Remember me must be a boolean value' })
   rememberMe?: boolean;
 }
 
@@ -50,7 +57,10 @@ export class LoginResponseDto {
 
 export class RefreshTokenDto {
   @ApiProperty({ example: 'refresh-token-here', description: 'Refresh token' })
-  @IsString()
+  @IsString({ message: 'Refresh token must be a string' })
+  @MinLength(10, { message: 'Invalid refresh token format' })
+  @NoSqlInjection()
+  @NoXss()
   refreshToken: string;
 }
 

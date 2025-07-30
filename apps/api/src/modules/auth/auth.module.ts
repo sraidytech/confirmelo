@@ -10,6 +10,7 @@ import { PrismaService } from '../../common/database/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { RealtimeNotificationService } from '../websocket/services/realtime-notification.service';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
+import { ValidationModule } from '../../common/validation/validation.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { WebsocketGateway } from '../websocket/websocket.gateway';
         },
       }),
     }),
+    ValidationModule,
   ],
   controllers: [AuthController],
   providers: [

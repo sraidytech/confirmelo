@@ -40,6 +40,9 @@ export class RequestLoggingMiddleware implements NestMiddleware {
 
     // Override res.end to capture response details
     const originalEnd = res.end;
+    const loggingService = this.loggingService;
+    const getClientIp = this.getClientIp.bind(this);
+    
     res.end = function(chunk?: any, encoding?: any) {
       const duration = Date.now() - startTime;
       const { statusCode } = res;
@@ -48,13 +51,13 @@ export class RequestLoggingMiddleware implements NestMiddleware {
       const logLevel = statusCode >= 400 ? 'warn' : 'info';
       const message = `Request completed - ${method} ${originalUrl} ${statusCode} - ${duration}ms`;
       
-      this.loggingService.logWithContext(logLevel, message, {
+      loggingService.logWithContext(logLevel, message, {
         correlationId,
         method,
         url: originalUrl,
         statusCode,
         duration,
-        ip: this.getClientIp(req),
+        ip: getClientIp(req),
         userAgent,
         userId: req.user?.id,
         organizationId: req.user?.organizationId,
@@ -62,7 +65,7 @@ export class RequestLoggingMiddleware implements NestMiddleware {
       });
 
       // Log performance metrics
-      this.loggingService.logPerformance({
+      loggingService.logPerformance({
         operation: `${method} ${originalUrl}`,
         duration,
         success: statusCode < 400,
@@ -78,7 +81,7 @@ export class RequestLoggingMiddleware implements NestMiddleware {
 
       // Call original end method
       originalEnd.call(this, chunk, encoding);
-    }.bind(this);
+    };
 
     next();
   }

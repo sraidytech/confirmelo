@@ -5,12 +5,12 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
 import { getNavigationItems } from '@/lib/auth-utils';
 import { cn } from '@/lib/utils';
-import { 
-  LayoutDashboard, 
-  ShoppingCart, 
-  Users, 
-  BarChart3, 
-  Settings, 
+import {
+  LayoutDashboard,
+  ShoppingCart,
+  Users,
+  BarChart3,
+  Settings,
   UserCheck,
   Building2
 } from 'lucide-react';
@@ -30,9 +30,9 @@ interface RoleBasedNavProps {
   orientation?: 'horizontal' | 'vertical';
 }
 
-export function RoleBasedNav({ 
-  className, 
-  orientation = 'vertical' 
+export function RoleBasedNav({
+  className,
+  orientation = 'vertical'
 }: RoleBasedNavProps) {
   const { user } = useAuth();
   const pathname = usePathname();
@@ -43,8 +43,8 @@ export function RoleBasedNav({
 
   const navigationItems = getNavigationItems(user.role);
 
-  const baseClasses = orientation === 'horizontal' 
-    ? 'flex space-x-4' 
+  const baseClasses = orientation === 'horizontal'
+    ? 'flex space-x-4'
     : 'flex flex-col space-y-1';
 
   return (
@@ -90,7 +90,7 @@ export function SidebarNav() {
           </span>
         </div>
       </div>
-      
+
       <div className="px-6 pb-6">
         <RoleBasedNav />
       </div>

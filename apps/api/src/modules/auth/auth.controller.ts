@@ -2,6 +2,10 @@ import { Controller, Get, Post, Body } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Public, Auth, CurrentUser } from '../../common/decorators';
 import { PrismaService } from '../../common/database/prisma.service';
+import { RedisService } from '../../common/redis/redis.service';
+import { RealtimeNotificationService } from '../websocket/services/realtime-notification.service';
+import { WebsocketGateway } from '../websocket/websocket.gateway';
+import { LogoutDto, LogoutResponse } from './dto/logout.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 
@@ -29,6 +33,9 @@ export class AuthController {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private redisService: RedisService,
+    private realtimeNotificationService: RealtimeNotificationService,
+    private websocketGateway: WebsocketGateway,
   ) {}
 
   @Public()
@@ -264,11 +271,241 @@ export class AuthController {
   @Auth()
   @Post('logout')
   @ApiOperation({ summary: 'Logout user' })
-  async logout(@CurrentUser() user: any) {
-    // TODO: Implement proper logout with session invalidation
-    return { 
-      message: 'Logout successful',
-      userId: user.id 
-    };
+  @ApiResponse({ status: 200, description: 'Logout successful', type: LogoutResponse })
+  async logout(@CurrentUser() user: any, @Body() body: LogoutDto) {
+    try {
+      const userId = user.id;
+      const { sessionId, logoutFromAll = false } = body;
+
+      if (logoutFromAll) {
+        // Logout from all devices/sessions
+        await this.logoutFromAllSessions(userId);
+        return {
+          message: 'Successfully logged out from all devices',
+          userId,
+          timestamp: new Date().toISOString(),
+        };
+      } else {
+        // Logout from current session only
+        await this.logoutFromCurrentSession(userId, sessionId);
+        return {
+          message: 'Logout successful',
+          userId,
+          timestamp: new Date().toISOString(),
+        };
+      }
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw new Error('Logout failed');
+    }
+  }
+
+  @Auth()
+  @Post('logout-all')
+  @ApiOperation({ summary: 'Logout user from all devices' })
+  @ApiResponse({ status: 200, description: 'Logged out from all devices successfully' })
+  async logoutFromAllDevices(@CurrentUser() user: any) {
+    try {
+      const userId = user.id;
+      await this.logoutFromAllSessions(userId);
+      
+      return {
+        message: 'Successfully logged out from all devices',
+        userId,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error('Logout from all devices error:', error);
+      throw new Error('Logout from all devices failed');
+    }
+  }
+
+  /**
+   * Logout from current session only
+   */
+  private async logoutFromCurrentSession(userId: string, sessionId?: string): Promise<void> {
+    try {
+      // If sessionId is provided, invalidate specific session
+      if (sessionId) {
+        // Remove session from database
+        await this.prisma.session.deleteMany({
+          where: {
+            userId,
+            sessionToken: sessionId,
+          },
+        });
+
+        // Remove session from Redis
+        await this.redisService.deleteSession(sessionId);
+
+        // Add token to blacklist in Redis (for JWT invalidation)
+        await this.blacklistToken(sessionId);
+      } else {
+        // If no sessionId provided, invalidate all sessions for the user
+        // This is a fallback - ideally sessionId should always be provided
+        await this.logoutFromAllSessions(userId);
+        return;
+      }
+
+      // Update user online status
+      await this.updateUserOnlineStatus(userId, false);
+
+      // Broadcast session termination event
+      await this.realtimeNotificationService.broadcastSessionUpdate({
+        userId,
+        sessionId,
+        action: 'terminated',
+        reason: 'User logout',
+        timestamp: new Date(),
+        organizationId: await this.getUserOrganizationId(userId),
+      });
+
+      // Disconnect WebSocket connections for this session
+      await this.websocketGateway.disconnectUser(userId, 'User logged out');
+
+      console.log(`User ${userId} logged out from session ${sessionId}`);
+    } catch (error) {
+      console.error(`Error logging out user ${userId} from session ${sessionId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Logout from all sessions/devices
+   */
+  private async logoutFromAllSessions(userId: string): Promise<void> {
+    try {
+      // Get all user sessions from database
+      const userSessions = await this.prisma.session.findMany({
+        where: { userId },
+        select: { sessionToken: true },
+      });
+
+      // Remove all sessions from database
+      await this.prisma.session.deleteMany({
+        where: { userId },
+      });
+
+      // Remove all sessions from Redis and blacklist tokens
+      if (userSessions && userSessions.length > 0) {
+        for (const session of userSessions) {
+          await this.redisService.deleteSession(session.sessionToken);
+          await this.blacklistToken(session.sessionToken);
+        }
+      }
+
+      // Clear any user-specific Redis data
+      await this.clearUserRedisData(userId);
+
+      // Update user online status
+      await this.updateUserOnlineStatus(userId, false);
+
+      // Broadcast session termination event
+      await this.realtimeNotificationService.broadcastSessionUpdate({
+        userId,
+        action: 'terminated',
+        reason: 'Logged out from all devices',
+        timestamp: new Date(),
+        organizationId: await this.getUserOrganizationId(userId),
+      });
+
+      // Force disconnect all WebSocket connections
+      await this.websocketGateway.disconnectUser(userId, 'Logged out from all devices');
+
+      console.log(`User ${userId} logged out from all sessions`);
+    } catch (error) {
+      console.error(`Error logging out user ${userId} from all sessions:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Add token to blacklist in Redis
+   */
+  private async blacklistToken(token: string): Promise<void> {
+    try {
+      // Decode token to get expiration time
+      let expirationTime = 3600; // Default 1 hour
+      try {
+        const decoded = this.jwtService.decode(token) as any;
+        if (decoded && decoded.exp) {
+          const now = Math.floor(Date.now() / 1000);
+          expirationTime = Math.max(decoded.exp - now, 0);
+        }
+      } catch (decodeError) {
+        // If token can't be decoded, use default expiration
+        console.warn('Could not decode token for blacklisting, using default expiration');
+      }
+
+      // Add to blacklist with expiration
+      await this.redisService.set(`blacklist:${token}`, true, expirationTime);
+    } catch (error) {
+      console.error('Error blacklisting token:', error);
+      // Don't throw error here as it's not critical for logout
+    }
+  }
+
+  /**
+   * Clear user-specific Redis data
+   */
+  private async clearUserRedisData(userId: string): Promise<void> {
+    try {
+      const redisClient = this.redisService.getClient();
+      
+      // Clear user permissions cache
+      await this.redisService.del(`user_permissions:${userId}`);
+      
+      // Clear user online status
+      await this.redisService.del(`user:${userId}:online`);
+      
+      // Clear any rate limiting data for the user
+      const rateLimitKeys = await redisClient.keys(`rate_limit:user:${userId}:*`);
+      if (rateLimitKeys.length > 0) {
+        await redisClient.del(rateLimitKeys);
+      }
+
+      // Clear any other user-specific cached data
+      const userCacheKeys = await redisClient.keys(`user:${userId}:*`);
+      if (userCacheKeys.length > 0) {
+        await redisClient.del(userCacheKeys);
+      }
+    } catch (error) {
+      console.error(`Error clearing Redis data for user ${userId}:`, error);
+      // Don't throw error here as it's not critical for logout
+    }
+  }
+
+  /**
+   * Update user online status in database
+   */
+  private async updateUserOnlineStatus(userId: string, isOnline: boolean): Promise<void> {
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          isOnline,
+          lastActiveAt: new Date(),
+        },
+      });
+    } catch (error) {
+      console.error(`Error updating online status for user ${userId}:`, error);
+      // Don't throw error here as it's not critical for logout
+    }
+  }
+
+  /**
+   * Get user's organization ID
+   */
+  private async getUserOrganizationId(userId: string): Promise<string> {
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { organizationId: true },
+      });
+      return user?.organizationId || '';
+    } catch (error) {
+      console.error(`Error getting organization ID for user ${userId}:`, error);
+      return '';
+    }
   }
 }

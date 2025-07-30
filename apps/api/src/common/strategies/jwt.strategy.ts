@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
+import { RedisService } from '../redis/redis.service';
 
 export interface JwtPayload {
   sub: string; // user ID
@@ -19,15 +20,37 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private configService: ConfigService,
     private prismaService: PrismaService,
+    private redisService: RedisService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: configService.get('JWT_SECRET', 'dev-jwt-secret-key'),
+      passReqToCallback: true, // This allows us to access the request object
     });
   }
 
-  async validate(payload: JwtPayload) {
+  async validate(request: any, payload: JwtPayload) {
+    // Extract the token from the request
+    const token = ExtractJwt.fromAuthHeaderAsBearerToken()(request);
+    
+    // Check if token is blacklisted
+    if (token) {
+      try {
+        const isBlacklisted = await this.redisService.exists(`blacklist:${token}`);
+        if (isBlacklisted) {
+          throw new UnauthorizedException('Token has been invalidated');
+        }
+      } catch (error) {
+        // If it's an UnauthorizedException (token is blacklisted), re-throw it
+        if (error instanceof UnauthorizedException) {
+          throw error;
+        }
+        // Log Redis error but don't fail authentication for other errors
+        console.warn('Redis blacklist check failed:', error.message);
+        // Continue with validation - Redis failure shouldn't block authentication
+      }
+    }
     // Validate that the user still exists and is active
     const user = await this.prismaService.user.findUnique({
       where: { id: payload.sub },

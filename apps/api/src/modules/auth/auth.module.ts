@@ -7,6 +7,8 @@ import { JwtStrategy } from '../../common/strategies/jwt.strategy';
 import { AuthorizationService } from '../../common/services/authorization.service';
 import { PrismaService } from '../../common/database/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
+import { RealtimeNotificationService } from '../websocket/services/realtime-notification.service';
+import { WebsocketGateway } from '../websocket/websocket.gateway';
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { RedisService } from '../../common/redis/redis.service';
     AuthorizationService,
     PrismaService,
     RedisService,
+    RealtimeNotificationService,
+    WebsocketGateway,
   ],
   exports: [
     JwtStrategy,

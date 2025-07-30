@@ -11,6 +11,7 @@ import { UserStatusManager } from './user-status-manager';
 import { UserActivityDashboard } from './user-activity-dashboard';
 import { OnlineUsersList, CompactOnlineUsers } from './online-users-list';
 import { PresenceIndicator } from './presence-indicator';
+import { SessionManagement } from './session-management';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,7 +26,8 @@ import {
   Wifi,
   WifiOff,
   Bell,
-  RefreshCw
+  RefreshCw,
+  Monitor
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -122,7 +124,7 @@ export function UserManagementDashboard({
 
       {/* Main Dashboard Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="profile" className="flex items-center">
             <UserIcon className="h-4 w-4 mr-2" />
             {t('navigation.profile')}
@@ -130,6 +132,10 @@ export function UserManagementDashboard({
           <TabsTrigger value="security" className="flex items-center">
             <Shield className="h-4 w-4 mr-2" />
             {t('password.title')}
+          </TabsTrigger>
+          <TabsTrigger value="sessions" className="flex items-center">
+            <Settings className="h-4 w-4 mr-2" />
+            Sessions
           </TabsTrigger>
           <TabsTrigger value="activity" className="flex items-center">
             <Activity className="h-4 w-4 mr-2" />
@@ -218,6 +224,10 @@ export function UserManagementDashboard({
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="sessions" className="space-y-6">
+          <SessionManagement key={`sessions-${refreshKey}`} />
         </TabsContent>
 
         <TabsContent value="activity" className="space-y-6">

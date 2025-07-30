@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, Delete } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Public, Auth, CurrentUser } from '../../common/decorators';
 import { PrismaService } from '../../common/database/prisma.service';
@@ -6,6 +6,15 @@ import { RedisService } from '../../common/redis/redis.service';
 import { RealtimeNotificationService } from '../websocket/services/realtime-notification.service';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { LogoutDto, LogoutResponse } from './dto/logout.dto';
+import { 
+  GetSessionsDto, 
+  TerminateSessionDto, 
+  GetSessionsResponse, 
+  TerminateSessionResponse,
+  SessionStatsDto,
+  SessionActivityDto
+} from './dto/session-management.dto';
+import { SessionManagementService } from './services/session-management.service';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 
@@ -36,6 +45,7 @@ export class AuthController {
     private redisService: RedisService,
     private realtimeNotificationService: RealtimeNotificationService,
     private websocketGateway: WebsocketGateway,
+    private sessionManagementService: SessionManagementService,
   ) {}
 
   @Public()
@@ -507,5 +517,70 @@ export class AuthController {
       console.error(`Error getting organization ID for user ${userId}:`, error);
       return '';
     }
+  }
+
+  // ==================== SESSION MANAGEMENT ENDPOINTS ====================
+
+  @Auth()
+  @Get('sessions')
+  @ApiOperation({ summary: 'Get user sessions with detailed information' })
+  @ApiResponse({ status: 200, description: 'Sessions retrieved successfully', type: GetSessionsResponse })
+  async getUserSessions(
+    @CurrentUser() user: any,
+    @Query() query: GetSessionsDto
+  ): Promise<GetSessionsResponse> {
+    return this.sessionManagementService.getUserSessions(user.id, query.includeExpired);
+  }
+
+  @Auth()
+  @Get('sessions/stats')
+  @ApiOperation({ summary: 'Get session statistics for current user' })
+  @ApiResponse({ status: 200, description: 'Session statistics retrieved successfully', type: SessionStatsDto })
+  async getSessionStats(@CurrentUser() user: any): Promise<SessionStatsDto> {
+    return this.sessionManagementService.getSessionStats(user.id);
+  }
+
+  @Auth()
+  @Get('sessions/activity')
+  @ApiOperation({ summary: 'Get session activity history' })
+  @ApiResponse({ status: 200, description: 'Session activity retrieved successfully', type: [SessionActivityDto] })
+  async getSessionActivity(
+    @CurrentUser() user: any,
+    @Query('sessionId') sessionId?: string
+  ): Promise<SessionActivityDto[]> {
+    return this.sessionManagementService.getSessionActivity(user.id, sessionId);
+  }
+
+  @Auth()
+  @Delete('sessions/:sessionId')
+  @ApiOperation({ summary: 'Terminate a specific session' })
+  @ApiResponse({ status: 200, description: 'Session terminated successfully', type: TerminateSessionResponse })
+  async terminateSession(
+    @CurrentUser() user: any,
+    @Param('sessionId') sessionId: string,
+    @Body() body: { reason?: string }
+  ): Promise<TerminateSessionResponse> {
+    return this.sessionManagementService.terminateSession(
+      user.id, 
+      sessionId, 
+      body.reason,
+      user.id // terminated by self
+    );
+  }
+
+  @Auth()
+  @Post('sessions/terminate')
+  @ApiOperation({ summary: 'Terminate a session (alternative endpoint)' })
+  @ApiResponse({ status: 200, description: 'Session terminated successfully', type: TerminateSessionResponse })
+  async terminateSessionPost(
+    @CurrentUser() user: any,
+    @Body() body: TerminateSessionDto
+  ): Promise<TerminateSessionResponse> {
+    return this.sessionManagementService.terminateSession(
+      user.id, 
+      body.sessionId, 
+      body.reason,
+      user.id // terminated by self
+    );
   }
 }

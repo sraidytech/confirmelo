@@ -7,6 +7,7 @@ import { PrismaService } from '../../../common/database/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { RealtimeNotificationService } from '../../websocket/services/realtime-notification.service';
 import { WebsocketGateway } from '../../websocket/websocket.gateway';
+import { SessionManagementService } from '../services/session-management.service';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 
 describe('AuthController - Logout Integration Tests', () => {
@@ -85,6 +86,15 @@ describe('AuthController - Logout Integration Tests', () => {
           provide: WebsocketGateway,
           useValue: {
             disconnectUser: jest.fn(),
+          },
+        },
+        {
+          provide: SessionManagementService,
+          useValue: {
+            getUserSessions: jest.fn(),
+            terminateSession: jest.fn(),
+            getSessionStats: jest.fn(),
+            getSessionActivity: jest.fn(),
           },
         },
         {
@@ -206,6 +216,10 @@ describe('AuthController - Logout Integration Tests', () => {
             provide: WebsocketGateway,
             useValue: {},
           },
+          {
+            provide: SessionManagementService,
+            useValue: {},
+          },
         ],
       })
         .overrideGuard(JwtAuthGuard)
@@ -276,6 +290,10 @@ describe('AuthController - Logout Integration Tests', () => {
           },
           {
             provide: WebsocketGateway,
+            useValue: {},
+          },
+          {
+            provide: SessionManagementService,
             useValue: {},
           },
         ],

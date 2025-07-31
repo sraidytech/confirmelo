@@ -22,62 +22,13 @@ import {
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
-
-interface DeviceInfo {
-  browser?: string;
-  os?: string;
-  device?: string;
-  isMobile: boolean;
-}
-
-interface LocationInfo {
-  country?: string;
-  city?: string;
-  region?: string;
-  timezone?: string;
-}
-
-interface SessionInfo {
-  id: string;
-  sessionToken: string;
-  userId: string;
-  ipAddress?: string;
-  userAgent?: string;
-  deviceInfo: DeviceInfo;
-  locationInfo: LocationInfo;
-  createdAt: string;
-  expiresAt: string;
-  lastActivity?: string;
-  isCurrent: boolean;
-  isSuspicious: boolean;
-  suspiciousReasons?: string[];
-}
-
-interface SessionStats {
-  totalSessions: number;
-  activeSessions: number;
-  expiredSessions: number;
-  suspiciousSessions: number;
-  deviceBreakdown: {
-    desktop: number;
-    mobile: number;
-    tablet: number;
-    unknown: number;
-  };
-  locationBreakdown: Record<string, number>;
-  recentActivityCount: number;
-}
-
-interface SessionActivity {
-  id: string;
-  sessionId: string;
-  type: string;
-  description: string;
-  ipAddress?: string;
-  userAgent?: string;
-  timestamp: string;
-  metadata?: Record<string, any>;
-}
+import { 
+  SessionInfo, 
+  SessionStats, 
+  SessionActivity, 
+  DeviceInfo, 
+  LocationInfo 
+} from '@/types/auth';
 
 export default function SessionsPage() {
   const { t } = useTranslation();
@@ -88,6 +39,7 @@ export default function SessionsPage() {
   const [loading, setLoading] = useState(true);
   const [terminating, setTerminating] = useState<string | null>(null);
   const [includeExpired, setIncludeExpired] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSessionData();
@@ -96,20 +48,48 @@ export default function SessionsPage() {
   const loadSessionData = async () => {
     try {
       setLoading(true);
-      const [sessionsResponse, statsResponse, activitiesResponse] = await Promise.all([
-        api.get(`/auth/sessions?includeExpired=${includeExpired}`),
-        api.get('/auth/sessions/stats'),
-        api.get('/auth/sessions/activity'),
-      ]);
+      setApiError(null);
+      
+      // Load sessions
+      try {
+        const sessionsResponse = await api.getSessions(includeExpired);
+        console.log('Sessions response:', sessionsResponse);
+        setSessions(sessionsResponse?.sessions || []);
+      } catch (sessionError: any) {
+        console.error('Error loading sessions:', sessionError);
+        setSessions([]);
+        if (sessionError?.message?.includes('Cannot read properties of undefined')) {
+          setApiError('API client not properly initialized. Please refresh the page.');
+        }
+      }
 
-      setSessions(sessionsResponse.data.sessions);
-      setStats(statsResponse.data);
-      setActivities(activitiesResponse.data);
-    } catch (error) {
+      // Load stats
+      try {
+        const statsResponse = await api.getSessionStats();
+        console.log('Stats response:', statsResponse);
+        setStats(statsResponse);
+      } catch (statsError: any) {
+        console.error('Error loading stats:', statsError);
+        setStats(null);
+      }
+
+      // Load activities
+      try {
+        const activitiesResponse = await api.getSessionActivity();
+        console.log('Activities response:', activitiesResponse);
+        setActivities(activitiesResponse || []);
+      } catch (activitiesError: any) {
+        console.error('Error loading activities:', activitiesError);
+        setActivities([]);
+      }
+
+    } catch (error: any) {
       console.error('Error loading session data:', error);
+      const errorMessage = error?.message || 'Unknown error occurred';
+      setApiError(errorMessage);
       toast({
         title: 'Error',
-        description: 'Failed to load session data',
+        description: `Failed to load session data: ${errorMessage}`,
         variant: 'destructive',
       });
     } finally {
@@ -120,9 +100,7 @@ export default function SessionsPage() {
   const terminateSession = async (sessionId: string) => {
     try {
       setTerminating(sessionId);
-      await api.delete(`/auth/sessions/${sessionId}`, {
-        data: { reason: 'Terminated by user' }
-      });
+      await api.terminateSession(sessionId, 'Terminated by user');
       
       toast({
         title: 'Success',
@@ -175,16 +153,38 @@ export default function SessionsPage() {
             Manage your active sessions and monitor security
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => setIncludeExpired(!includeExpired)}
-        >
-          {includeExpired ? 'Hide Expired' : 'Show Expired'}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => loadSessionData()}
+            disabled={loading}
+          >
+            {loading ? 'Loading...' : 'Refresh'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setIncludeExpired(!includeExpired)}
+          >
+            {includeExpired ? 'Hide Expired' : 'Show Expired'}
+          </Button>
+        </div>
       </div>
 
+      {apiError && (
+        <Alert>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertDescription>
+            <strong>API Error:</strong> {apiError}
+            <br />
+            <span className="text-sm">
+              This might be because the API server is not running or there's a connectivity issue.
+            </span>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Stats Overview */}
-      {stats && (
+      {stats ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -244,6 +244,66 @@ export default function SessionsPage() {
             </CardContent>
           </Card>
         </div>
+      ) : !loading && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Active Sessions</CardTitle>
+              <Activity className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-muted-foreground">--</div>
+              <p className="text-xs text-muted-foreground">
+                Data unavailable
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Suspicious Sessions</CardTitle>
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-muted-foreground">--</div>
+              <p className="text-xs text-muted-foreground">
+                Data unavailable
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Device Types</CardTitle>
+              <Monitor className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span>Desktop</span>
+                  <span>--</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Mobile</span>
+                  <span>--</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Recent Activity</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-muted-foreground">--</div>
+              <p className="text-xs text-muted-foreground">
+                Data unavailable
+              </p>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       <Tabs defaultValue="sessions" className="space-y-4">
@@ -257,7 +317,12 @@ export default function SessionsPage() {
           {sessions.length === 0 ? (
             <Card>
               <CardContent className="flex items-center justify-center h-32">
-                <p className="text-muted-foreground">No sessions found</p>
+                <div className="text-center">
+                  <p className="text-muted-foreground">No sessions found</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    {includeExpired ? 'No sessions available' : 'No active sessions found'}
+                  </p>
+                </div>
               </CardContent>
             </Card>
           ) : (
@@ -389,29 +454,39 @@ export default function SessionsPage() {
         </TabsContent>
 
         <TabsContent value="locations" className="space-y-4">
-          {stats && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Session Locations</CardTitle>
-                <CardDescription>
-                  Geographic distribution of your sessions
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+          <Card>
+            <CardHeader>
+              <CardTitle>Session Locations</CardTitle>
+              <CardDescription>
+                Geographic distribution of your sessions
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {stats ? (
                 <div className="space-y-3">
-                  {Object.entries(stats.locationBreakdown).map(([location, count]) => (
-                    <div key={location} className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <Globe className="h-4 w-4 text-muted-foreground" />
-                        <span>{location}</span>
+                  {Object.entries(stats.locationBreakdown).length > 0 ? (
+                    Object.entries(stats.locationBreakdown).map(([location, count]) => (
+                      <div key={location} className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <Globe className="h-4 w-4 text-muted-foreground" />
+                          <span>{location}</span>
+                        </div>
+                        <Badge variant="secondary">{count} sessions</Badge>
                       </div>
-                      <Badge variant="secondary">{count} sessions</Badge>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    <p className="text-muted-foreground text-center py-4">
+                      No location data available
+                    </p>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              ) : (
+                <p className="text-muted-foreground text-center py-4">
+                  Location data unavailable
+                </p>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

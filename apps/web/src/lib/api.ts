@@ -342,6 +342,54 @@ class ApiClient {
     }
   }
 
+  // Session Management endpoints
+  async getSessions(includeExpired = false) {
+    try {
+      const response = await this.client.get(`/auth/sessions?includeExpired=${includeExpired}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getSessionStats() {
+    try {
+      const response = await this.client.get('/auth/sessions/stats');
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getSessionActivity() {
+    try {
+      const response = await this.client.get('/auth/sessions/activity');
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async terminateSession(sessionId: string, reason?: string) {
+    try {
+      const response = await this.client.delete(`/auth/sessions/${sessionId}`, {
+        data: { reason: reason || 'Terminated by user' }
+      });
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async terminateAllSessions() {
+    try {
+      const response = await this.client.delete('/auth/sessions/all');
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
   // Admin endpoints
   async getAdminUsers() {
     try {
@@ -351,6 +399,44 @@ class ApiClient {
       throw this.handleApiError(error as AxiosError);
     }
   }
+
+  // Generic HTTP methods for backward compatibility
+  async get(url: string, config?: any) {
+    try {
+      const response = await this.client.get(url, config);
+      return response;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async post(url: string, data?: any, config?: any) {
+    try {
+      const response = await this.client.post(url, data, config);
+      return response;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async put(url: string, data?: any, config?: any) {
+    try {
+      const response = await this.client.put(url, data, config);
+      return response;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async delete(url: string, config?: any) {
+    try {
+      const response = await this.client.delete(url, config);
+      return response;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
 }
 
 export const apiClient = new ApiClient();
+export const api = apiClient;

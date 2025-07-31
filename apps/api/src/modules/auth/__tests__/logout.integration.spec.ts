@@ -9,12 +9,17 @@ import { RealtimeNotificationService } from '../../websocket/services/realtime-n
 import { WebsocketGateway } from '../../websocket/websocket.gateway';
 import { SessionManagementService } from '../services/session-management.service';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
+import { LoggingService } from '../../../common/services/logging.service';
+import { RateLimitGuard } from '../../../common/validation/guards/rate-limit.guard';
+import { ValidationService } from '../../../common/validation/validation.service';
+import { SanitizationService } from '../../../common/validation/sanitization.service';
 
 describe('AuthController - Logout Integration Tests', () => {
   let app: INestApplication;
   let prismaService: PrismaService;
   let redisService: RedisService;
   let jwtService: JwtService;
+  let authToken: string;
 
   const mockUser = {
     id: 'user-123',
@@ -36,6 +41,43 @@ describe('AuthController - Logout Integration Tests', () => {
     ipAddress: '127.0.0.1',
     userAgent: 'test-agent',
     createdAt: new Date(),
+  };
+
+  const mockLoggingService = {
+    log: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    verbose: jest.fn(),
+    logSecurity: jest.fn(),
+    logError: jest.fn(),
+    logPerformance: jest.fn(),
+  };
+
+  const mockValidationService = {
+    validatePasswordStrength: jest.fn(),
+    validateEmail: jest.fn(),
+    validateUsername: jest.fn(),
+    validatePhoneNumber: jest.fn(),
+    validateOrganizationName: jest.fn(),
+    validateUrl: jest.fn(),
+    validateRequestSize: jest.fn().mockReturnValue({ isValid: true, sizeKB: 1 }),
+    validateSessionId: jest.fn(),
+  };
+
+  const mockSanitizationService = {
+    sanitizeString: jest.fn().mockImplementation((str) => str),
+    sanitizeEmail: jest.fn().mockImplementation((email) => email),
+    sanitizePhoneNumber: jest.fn().mockImplementation((phone) => phone),
+    sanitizeUrl: jest.fn().mockImplementation((url) => url),
+    sanitizeUsername: jest.fn().mockImplementation((username) => username),
+    sanitizeOrganizationName: jest.fn().mockImplementation((name) => name),
+    sanitizeAddress: jest.fn().mockImplementation((address) => address),
+    sanitizeTaxId: jest.fn().mockImplementation((taxId) => taxId),
+    sanitizeSessionId: jest.fn().mockImplementation((sessionId) => sessionId),
+    sanitizeCorrelationId: jest.fn().mockImplementation((correlationId) => correlationId),
+    sanitizeObject: jest.fn().mockImplementation((obj) => obj),
+    sanitizeForLogging: jest.fn().mockImplementation((obj) => obj),
   };
 
   beforeEach(async () => {
@@ -77,6 +119,18 @@ describe('AuthController - Logout Integration Tests', () => {
           },
         },
         {
+          provide: LoggingService,
+          useValue: mockLoggingService,
+        },
+        {
+          provide: ValidationService,
+          useValue: mockValidationService,
+        },
+        {
+          provide: SanitizationService,
+          useValue: mockSanitizationService,
+        },
+        {
           provide: RealtimeNotificationService,
           useValue: {
             broadcastSessionUpdate: jest.fn(),
@@ -97,14 +151,12 @@ describe('AuthController - Logout Integration Tests', () => {
             getSessionActivity: jest.fn(),
           },
         },
-        {
-          provide: JwtAuthGuard,
-          useValue: {
-            canActivate: jest.fn().mockReturnValue(true),
-          },
-        },
       ],
     })
+      .overrideGuard(RateLimitGuard)
+      .useValue({
+        canActivate: jest.fn().mockReturnValue(true),
+      })
       .overrideGuard(JwtAuthGuard)
       .useValue({
         canActivate: (context) => {
@@ -121,6 +173,7 @@ describe('AuthController - Logout Integration Tests', () => {
     prismaService = moduleFixture.get<PrismaService>(PrismaService);
     redisService = moduleFixture.get<RedisService>(RedisService);
     jwtService = moduleFixture.get<JwtService>(JwtService);
+    authToken = 'Bearer mock-jwt-token';
   });
 
   afterEach(async () => {
@@ -182,13 +235,14 @@ describe('AuthController - Logout Integration Tests', () => {
       });
     });
 
-    it('should handle invalid request body', async () => {
+    it('should reject invalid request body with unknown fields', async () => {
       const response = await request(app.getHttpServer())
         .post('/auth/logout')
+        .set('Authorization', authToken)
         .send({ invalidField: 'invalid' })
-        .expect(201); // Should still work as fields are optional
+        .expect(400); // Should reject unknown fields
 
-      expect(response.body.message).toBe('Logout successful');
+      expect(response.body.message).toBe('Validation failed');
     });
 
     it('should require authentication', async () => {
@@ -209,6 +263,18 @@ describe('AuthController - Logout Integration Tests', () => {
             useValue: {},
           },
           {
+            provide: LoggingService,
+            useValue: mockLoggingService,
+          },
+          {
+            provide: ValidationService,
+            useValue: mockValidationService,
+          },
+          {
+            provide: SanitizationService,
+            useValue: mockSanitizationService,
+          },
+          {
             provide: RealtimeNotificationService,
             useValue: {},
           },
@@ -222,6 +288,10 @@ describe('AuthController - Logout Integration Tests', () => {
           },
         ],
       })
+        .overrideGuard(RateLimitGuard)
+        .useValue({
+          canActivate: jest.fn().mockReturnValue(true),
+        })
         .overrideGuard(JwtAuthGuard)
         .useValue({
           canActivate: () => false,
@@ -285,6 +355,18 @@ describe('AuthController - Logout Integration Tests', () => {
             useValue: {},
           },
           {
+            provide: LoggingService,
+            useValue: mockLoggingService,
+          },
+          {
+            provide: ValidationService,
+            useValue: mockValidationService,
+          },
+          {
+            provide: SanitizationService,
+            useValue: mockSanitizationService,
+          },
+          {
             provide: RealtimeNotificationService,
             useValue: {},
           },
@@ -298,6 +380,10 @@ describe('AuthController - Logout Integration Tests', () => {
           },
         ],
       })
+        .overrideGuard(RateLimitGuard)
+        .useValue({
+          canActivate: jest.fn().mockReturnValue(true),
+        })
         .overrideGuard(JwtAuthGuard)
         .useValue({
           canActivate: () => false,

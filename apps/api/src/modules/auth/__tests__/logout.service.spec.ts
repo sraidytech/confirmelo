@@ -1,11 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
 import { AuthController } from '../auth.controller';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { RealtimeNotificationService } from '../../websocket/services/realtime-notification.service';
 import { WebsocketGateway } from '../../websocket/websocket.gateway';
 import { SessionManagementService } from '../services/session-management.service';
+import { LoggingService } from '../../../common/services/logging.service';
 
 describe('AuthController - Logout Functionality', () => {
   let controller: AuthController;
@@ -85,6 +88,40 @@ describe('AuthController - Logout Functionality', () => {
             terminateSession: jest.fn(),
             getSessionStats: jest.fn(),
             getSessionActivity: jest.fn(),
+          },
+        },
+        {
+          provide: LoggingService,
+          useValue: {
+            log: jest.fn(),
+            error: jest.fn(),
+            warn: jest.fn(),
+            debug: jest.fn(),
+            logSecurityEvent: jest.fn(),
+            logSecurity: jest.fn(),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn().mockReturnValue('localhost'),
+          },
+        },
+        {
+          provide: Reflector,
+          useValue: {
+            get: jest.fn(),
+            getAll: jest.fn(),
+            getAllAndOverride: jest.fn(),
+            getAllAndMerge: jest.fn(),
+          },
+        },
+        {
+          provide: 'AuthorizationService',
+          useValue: {
+            checkUserPermissions: jest.fn().mockResolvedValue(true),
+            checkResourcePermission: jest.fn().mockResolvedValue(true),
+            getUserPermissions: jest.fn().mockResolvedValue([]),
           },
         },
       ],

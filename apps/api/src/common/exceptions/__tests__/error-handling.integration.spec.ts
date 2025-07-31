@@ -5,13 +5,16 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { Reflector } from '@nestjs/core';
 import * as request from 'supertest';
 import { ExceptionsModule } from '../exceptions.module';
 import { LoggingService } from '../../services/logging.service';
 import { ErrorMonitoringService } from '../../services/error-monitoring.service';
 import { Controller, Get, Post, Body } from '@nestjs/common';
 import { AuthenticationException, ValidationException } from '../custom-exceptions';
+import { JwtAuthGuard } from '../../guards/jwt-auth.guard';
+import { RolesGuard } from '../../guards/roles.guard';
 
 // Test controller to trigger different types of errors
 @Controller('test-errors')
@@ -46,6 +49,24 @@ describe('Error Handling Integration', () => {
   let errorMonitoringService: ErrorMonitoringService;
 
   beforeAll(async () => {
+    const mockAuthorizationService = {
+      checkUserPermissions: jest.fn().mockResolvedValue(true),
+      checkResourcePermission: jest.fn().mockResolvedValue(true),
+      getUserPermissions: jest.fn().mockResolvedValue([]),
+    };
+
+    const mockPrismaService = {
+      user: {
+        findUnique: jest.fn(),
+      },
+    };
+
+    const mockRedisService = {
+      get: jest.fn(),
+      set: jest.fn(),
+      del: jest.fn(),
+    };
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({
@@ -54,7 +75,19 @@ describe('Error Handling Integration', () => {
         ExceptionsModule,
       ],
       controllers: [TestErrorController],
-    }).compile();
+      providers: [
+        { provide: 'AuthorizationService', useValue: mockAuthorizationService },
+        { provide: 'PrismaService', useValue: mockPrismaService },
+        { provide: 'RedisService', useValue: mockRedisService },
+        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('localhost') } },
+        { provide: Reflector, useValue: { get: jest.fn(), getAll: jest.fn(), getAllAndOverride: jest.fn(), getAllAndMerge: jest.fn() } },
+      ],
+    })
+    .overrideGuard(JwtAuthGuard)
+    .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+    .overrideGuard(RolesGuard)
+    .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+    .compile();
 
     app = moduleFixture.createNestApplication();
     loggingService = moduleFixture.get<LoggingService>(LoggingService);

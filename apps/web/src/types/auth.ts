@@ -187,13 +187,67 @@ export interface UserActivitySummary {
   lastUserAgent?: string;
 }
 
+export interface DeviceInfo {
+  browser?: string;
+  os?: string;
+  device?: string;
+  isMobile: boolean;
+}
+
+export interface LocationInfo {
+  country?: string;
+  city?: string;
+  region?: string;
+  timezone?: string;
+}
+
 export interface SessionInfo {
   id: string;
+  sessionToken: string;
+  userId: string;
   ipAddress?: string;
   userAgent?: string;
+  deviceInfo: DeviceInfo;
+  locationInfo: LocationInfo;
   createdAt: string;
   expiresAt: string;
-  isActive: boolean;
+  lastActivity?: string;
+  isCurrent: boolean;
+  isSuspicious: boolean;
+  suspiciousReasons?: string[];
+}
+
+export interface SessionStats {
+  totalSessions: number;
+  activeSessions: number;
+  expiredSessions: number;
+  suspiciousSessions: number;
+  deviceBreakdown: {
+    desktop: number;
+    mobile: number;
+    tablet: number;
+    unknown: number;
+  };
+  locationBreakdown: Record<string, number>;
+  recentActivityCount: number;
+}
+
+export interface SessionActivity {
+  id: string;
+  sessionId: string;
+  type: string;
+  description: string;
+  ipAddress?: string;
+  userAgent?: string;
+  timestamp: string;
+  metadata?: Record<string, any>;
+}
+
+export interface GetSessionsResponse {
+  sessions: SessionInfo[];
+  total: number;
+  activeCount: number;
+  suspiciousCount: number;
 }
 
 export interface AvatarUploadResponse {

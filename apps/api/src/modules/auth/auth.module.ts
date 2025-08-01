@@ -5,12 +5,14 @@ import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth.controller';
 import { OAuth2Controller } from './controllers/oauth2.controller';
 import { YoucanOAuth2Controller } from './controllers/youcan-oauth2.controller';
+import { GoogleSheetsOAuth2Controller } from './controllers/google-sheets-oauth2.controller';
 import { JwtStrategy } from '../../common/strategies/jwt.strategy';
 import { AuthorizationService } from '../../common/services/authorization.service';
 import { SessionManagementService } from './services/session-management.service';
 import { OAuth2Service } from './services/oauth2.service';
 import { OAuth2ConfigService } from './services/oauth2-config.service';
 import { YoucanOAuth2Service } from './services/youcan-oauth2.service';
+import { GoogleSheetsOAuth2Service } from './services/google-sheets-oauth2.service';
 import { PrismaService } from '../../common/database/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { RealtimeNotificationService } from '../websocket/services/realtime-notification.service';
@@ -31,7 +33,7 @@ import { ValidationModule } from '../../common/validation/validation.module';
     }),
     ValidationModule,
   ],
-  controllers: [AuthController, OAuth2Controller, YoucanOAuth2Controller],
+  controllers: [AuthController, OAuth2Controller, YoucanOAuth2Controller, GoogleSheetsOAuth2Controller],
   providers: [
     JwtStrategy,
     AuthorizationService,
@@ -39,6 +41,7 @@ import { ValidationModule } from '../../common/validation/validation.module';
     OAuth2Service,
     OAuth2ConfigService,
     YoucanOAuth2Service,
+    GoogleSheetsOAuth2Service,
     PrismaService,
     RedisService,
     RealtimeNotificationService,
@@ -51,6 +54,7 @@ import { ValidationModule } from '../../common/validation/validation.module';
     OAuth2Service,
     OAuth2ConfigService,
     YoucanOAuth2Service,
+    GoogleSheetsOAuth2Service,
     PassportModule,
     JwtModule,
   ],

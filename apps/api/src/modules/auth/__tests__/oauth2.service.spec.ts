@@ -11,6 +11,27 @@ import axios from 'axios';
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+// Mock axios.create to return an instance with interceptors
+const mockAxiosInstance = {
+  interceptors: {
+    request: {
+      use: jest.fn(),
+    },
+    response: {
+      use: jest.fn(),
+    },
+  },
+  post: jest.fn(),
+  get: jest.fn(),
+  put: jest.fn(),
+  delete: jest.fn(),
+  defaults: {
+    headers: {},
+  },
+};
+
+mockedAxios.create = jest.fn().mockReturnValue(mockAxiosInstance);
+
 describe('OAuth2Service', () => {
   let service: OAuth2Service;
   let prismaService: any;
@@ -68,14 +89,7 @@ describe('OAuth2Service', () => {
     redisService = module.get(RedisService);
     configService = module.get(ConfigService);
 
-    // Setup axios mock
-    mockedAxios.create = jest.fn().mockReturnValue({
-      post: jest.fn(),
-      interceptors: {
-        request: { use: jest.fn() },
-        response: { use: jest.fn() },
-      },
-    });
+    // Axios mock is already set up globally
   });
 
   afterEach(() => {
@@ -172,18 +186,11 @@ describe('OAuth2Service', () => {
     };
 
     beforeEach(() => {
-      // Mock HTTP client
-      const mockHttpClient = {
-        post: jest.fn().mockResolvedValue({
-          status: 200,
-          data: mockTokenResponse,
-        }),
-        interceptors: {
-          request: { use: jest.fn() },
-          response: { use: jest.fn() },
-        },
-      };
-      mockedAxios.create.mockReturnValue(mockHttpClient as any);
+      // Setup mock response for token exchange
+      mockAxiosInstance.post.mockResolvedValue({
+        status: 200,
+        data: mockTokenResponse,
+      });
     });
 
     it('should exchange code for token successfully', async () => {
@@ -225,17 +232,12 @@ describe('OAuth2Service', () => {
     it('should handle token exchange failure', async () => {
       redisService.get.mockResolvedValue(mockStateData);
       
-      const mockHttpClient = {
-        post: jest.fn().mockResolvedValue({
+      mockAxiosInstance.post.mockRejectedValue({
+        response: {
           status: 400,
           data: { error: 'invalid_grant' },
-        }),
-        interceptors: {
-          request: { use: jest.fn() },
-          response: { use: jest.fn() },
         },
-      };
-      mockedAxios.create.mockReturnValue(mockHttpClient as any);
+      });
 
       await expect(
         service.exchangeCodeForToken(mockCode, mockState, mockConfig),
@@ -257,17 +259,10 @@ describe('OAuth2Service', () => {
     };
 
     beforeEach(() => {
-      const mockHttpClient = {
-        post: jest.fn().mockResolvedValue({
-          status: 200,
-          data: mockTokenResponse,
-        }),
-        interceptors: {
-          request: { use: jest.fn() },
-          response: { use: jest.fn() },
-        },
-      };
-      mockedAxios.create.mockReturnValue(mockHttpClient as any);
+      mockAxiosInstance.post.mockResolvedValue({
+        status: 200,
+        data: mockTokenResponse,
+      });
     });
 
     it('should refresh access token successfully', async () => {
@@ -298,17 +293,12 @@ describe('OAuth2Service', () => {
     it('should handle refresh token failure', async () => {
       prismaService.platformConnection.findUnique.mockResolvedValue(mockConnection as any);
       
-      const mockHttpClient = {
-        post: jest.fn().mockResolvedValue({
+      mockAxiosInstance.post.mockRejectedValue({
+        response: {
           status: 400,
           data: { error: 'invalid_grant' },
-        }),
-        interceptors: {
-          request: { use: jest.fn() },
-          response: { use: jest.fn() },
         },
-      };
-      mockedAxios.create.mockReturnValue(mockHttpClient as any);
+      });
 
       await expect(
         service.refreshAccessToken(mockConnectionId, mockConfig),

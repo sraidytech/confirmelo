@@ -12,6 +12,7 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  HttpCode,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -56,6 +57,7 @@ export class OAuth2Controller {
   ) {}
 
   @Post('initiate')
+  @HttpCode(200)
   @ApiOperation({
     summary: 'Initiate OAuth2 authorization flow',
     description: 'Generate authorization URL for OAuth2 platform integration',
@@ -133,6 +135,7 @@ export class OAuth2Controller {
   }
 
   @Post('complete')
+  @HttpCode(200)
   @ApiOperation({
     summary: 'Complete OAuth2 authorization flow',
     description: 'Exchange authorization code for access token and store connection',
@@ -346,6 +349,7 @@ export class OAuth2Controller {
   }
 
   @Post('connections/:id/refresh')
+  @HttpCode(200)
   @ApiOperation({
     summary: 'Refresh OAuth2 access token',
     description: 'Refresh the access token for a specific connection',
@@ -417,6 +421,7 @@ export class OAuth2Controller {
   }
 
   @Post('connections/:id/test')
+  @HttpCode(200)
   @ApiOperation({
     summary: 'Test OAuth2 connection',
     description: 'Test if the OAuth2 connection is working properly',

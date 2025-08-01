@@ -1,0 +1,2796 @@
+openapi: 3.0.3
+info:
+  title: Confirmelo Authentication System API
+  description: |
+    Comprehensive REST API for managing authentication, authorization, user management, 
+    and real-time features for a multi-tenant SaaS e-commerce order confirmation platform.
+    
+    ## Features
+    - JWT-based authentication with refresh tokens
+    - Role-based access control (RBAC)
+    - Multi-tenant organization support
+    - Real-time WebSocket communication
+    - Session management across devices
+    - Comprehensive audit logging
+    - Rate limiting and security monitoring
+    
+    ## Authentication
+    Most endpoints require JWT authentication via the Authorization header:
+    ```
+    Authorization: Bearer <access_token>
+    ```
+    
+    ## Rate Limiting
+    - Authentication endpoints: 10 requests/minute
+    - General endpoints: 100 requests/minute
+    - Rate limits are applied per IP address and per user
+  version: 1.0.0
+  contact:
+    name: Confirmelo API Support
+    email: api-support@confirmelo.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.confirmelo.com/api
+    description: Production server
+  - url: https://staging-api.confirmelo.com/api
+    description: Staging server
+  - url: http://localhost:3001/api
+    description: Development server
+
+security:
+  - BearerAuth: []
+
+paths:
+  # Authentication Endpoints
+  /auth/health:
+    get:
+      tags:
+        - Authentication
+      summary: Health check endpoint
+      description: Check the health status of the authentication service
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  message:
+                    type: string
+                    example: Authentication service is running
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register organization and admin user
+      description: Register a new organization with an admin user account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email or organization already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate a user and receive JWT tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Account locked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      description: Refresh an expired access token using a valid refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshTokenResponse'
+        '401':
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Get current user profile
+      description: Retrieve the current authenticated user's profile information
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: User logout
+      description: Logout the current user and invalidate their session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout-all:
+    post:
+      tags:
+        - Authentication
+      summary: Logout from all devices
+      description: Logout the user from all active sessions/devices
+      responses:
+        '200':
+          description: Logged out from all devices successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/forgot-password:
+    post:
+      tags:
+        - Authentication
+      summary: Request password reset
+      description: Send password reset email to user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Password reset email sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForgotPasswordResponse'
+        '400':
+          description: Invalid email format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/reset-password:
+    post:
+      tags:
+        - Authentication
+      summary: Reset password with token
+      description: Reset user password using reset token from email
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResetPasswordResponse'
+        '400':
+          description: Invalid token or weak password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Reset token expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # Session Management Endpoints
+  /auth/sessions:
+    get:
+      tags:
+        - Session Management
+      summary: Get user sessions
+      description: Retrieve all active sessions for the current user
+      parameters:
+        - name: includeExpired
+          in: query
+          description: Include expired sessions
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Sessions retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionsResponse'
+
+  /auth/sessions/stats:
+    get:
+      tags:
+        - Session Management
+      summary: Get session statistics
+      description: Get statistical information about user sessions
+      responses:
+        '200':
+          description: Session statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionStats'
+
+  /auth/sessions/activity:
+    get:
+      tags:
+        - Session Management
+      summary: Get session activity
+      description: Retrieve session activity history
+      parameters:
+        - name: sessionId
+          in: query
+          description: Filter by specific session
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Session activity retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionActivity'
+
+  /auth/sessions/{sessionId}:
+    delete:
+      tags:
+        - Session Management
+      summary: Terminate session
+      description: Terminate a specific session
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: Session ID to terminate
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Reason for termination
+                  example: User requested termination
+      responses:
+        '200':
+          description: Session terminated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminateSessionResponse'
+
+  # User Profile Management
+  /users/profile:
+    get:
+      tags:
+        - User Profile
+      summary: Get user profile
+      description: Retrieve the current user's detailed profile information
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+
+    put:
+      tags:
+        - User Profile
+      summary: Update user profile
+      description: Update the current user's profile information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateProfileResponse'
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email or username already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/change-password:
+    post:
+      tags:
+        - User Profile
+      summary: Change password
+      description: Change the current user's password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangePasswordResponse'
+        '400':
+          description: Invalid current password or weak new password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/avatar:
+    put:
+      tags:
+        - User Profile
+      summary: Update avatar
+      description: Update the user's avatar URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - avatarUrl
+              properties:
+                avatarUrl:
+                  type: string
+                  format: uri
+                  description: URL of the new avatar image
+                  example: https://example.com/avatar.jpg
+      responses:
+        '200':
+          description: Avatar updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Avatar updated successfully
+                  avatarUrl:
+                    type: string
+                    example: https://example.com/avatar.jpg
+
+  # User Presence and Activity
+  /users/activity:
+    post:
+      tags:
+        - User Activity
+      summary: Update user activity
+      description: Update the user's last activity timestamp
+      responses:
+        '200':
+          description: Activity updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /users/online-status:
+    get:
+      tags:
+        - User Activity
+      summary: Get online status
+      description: Get the current user's online status
+      responses:
+        '200':
+          description: Online status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isOnline:
+                    type: boolean
+                    example: true
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /users/{userId}/presence:
+    get:
+      tags:
+        - User Activity
+      summary: Get user presence
+      description: Get detailed presence information for a specific user
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: User ID to get presence for
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User presence retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPresence'
+
+  /users/presence/bulk:
+    post:
+      tags:
+        - User Activity
+      summary: Get bulk user presence
+      description: Get presence information for multiple users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - userIds
+              properties:
+                userIds:
+                  type: array
+                  items:
+                    type: string
+                  example: ["user_123456789", "user_987654321"]
+      responses:
+        '200':
+          description: Bulk user presence retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkUserPresence'
+
+  /users/organization/online:
+    get:
+      tags:
+        - User Activity
+      summary: Get online users in organization
+      description: Get all online users in the current organization
+      responses:
+        '200':
+          description: Online users retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnlineUsersResponse'
+
+  # Admin User Management
+  /admin/users:
+    get:
+      tags:
+        - Admin - User Management
+      summary: Get all users
+      description: Retrieve all users in the organization (Admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: search
+          in: query
+          description: Search term for name/email
+          required: false
+          schema:
+            type: string
+        - name: role
+          in: query
+          description: Filter by user role
+          required: false
+          schema:
+            $ref: '#/components/schemas/UserRole'
+        - name: status
+          in: query
+          description: Filter by user status
+          required: false
+          schema:
+            $ref: '#/components/schemas/UserStatus'
+      responses:
+        '200':
+          description: Users retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsersListResponse'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - Admin - User Management
+      summary: Create user
+      description: Create a new user in the organization (Admin only)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateUserResponse'
+        '400':
+          description: Invalid input data or weak password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email or username already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/users/{id}:
+    put:
+      tags:
+        - Admin - User Management
+      summary: Update user
+      description: Update user details and role (Admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: User ID to update
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateUserResponse'
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/users/{id}/suspend:
+    put:
+      tags:
+        - Admin - User Management
+      summary: Suspend user
+      description: Suspend a user account (Admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: User ID to suspend
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  description: Reason for suspension
+                  example: Policy violation
+                suspendUntil:
+                  type: string
+                  format: date-time
+                  description: Suspension end date (optional)
+      responses:
+        '200':
+          description: User suspended successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserStatusChangeResponse'
+
+  /admin/users/{id}/activate:
+    put:
+      tags:
+        - Admin - User Management
+      summary: Activate user
+      description: Activate a suspended user account (Admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: User ID to activate
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User activated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserStatusChangeResponse'
+
+  # Team Management
+  /admin/teams:
+    get:
+      tags:
+        - Admin - Team Management
+      summary: Get all teams
+      description: Retrieve all teams in the organization (Admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Teams retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamsListResponse'
+
+    post:
+      tags:
+        - Admin - Team Management
+      summary: Create team
+      description: Create a new team (Admin only)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeamRequest'
+      responses:
+        '201':
+          description: Team created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTeamResponse'
+
+  /admin/teams/{id}:
+    get:
+      tags:
+        - Admin - Team Management
+      summary: Get team by ID
+      description: Retrieve a specific team with detailed information (Admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Team ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Team retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamDetails'
+
+    put:
+      tags:
+        - Admin - Team Management
+      summary: Update team
+      description: Update team details (Admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Team ID to update
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTeamRequest'
+      responses:
+        '200':
+          description: Team updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateTeamResponse'
+
+    delete:
+      tags:
+        - Admin - Team Management
+      summary: Delete team
+      description: Delete a team (Admin only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Team ID to delete
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Team deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Team deleted successfully
+                  deletedAt:
+                    type: string
+                    format: date-time
+
+  # Real-time Notifications
+  /notifications:
+    get:
+      tags:
+        - Real-time Notifications
+      summary: Get user notifications
+      description: Retrieve stored notifications for the current user
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum notifications to return
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Notifications retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationsResponse'
+
+    delete:
+      tags:
+        - Real-time Notifications
+      summary: Clear all notifications
+      description: Clear all notifications for the current user
+      responses:
+        '204':
+          description: All notifications cleared successfully
+
+  /notifications/mark-read:
+    post:
+      tags:
+        - Real-time Notifications
+      summary: Mark notifications as read
+      description: Mark specific notifications as read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - notificationIds
+              properties:
+                notificationIds:
+                  type: array
+                  items:
+                    type: string
+                  example: ["notif_123456789", "notif_987654321"]
+      responses:
+        '204':
+          description: Notifications marked as read successfully
+
+  # Health Check
+  /health:
+    get:
+      tags:
+        - System
+      summary: System health check
+      description: Check the overall system health
+      security: []
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /health/detailed:
+    get:
+      tags:
+        - System
+      summary: Detailed health check
+      description: Get detailed health information about all system components
+      security: []
+      responses:
+        '200':
+          description: Detailed health information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailedHealthResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from login endpoint
+
+  schemas:
+    # Enums
+    UserRole:
+      type: string
+      enum:
+        - SUPER_ADMIN
+        - ADMIN
+        - TEAM_LEADER
+        - CALL_CENTER_AGENT
+        - FOLLOWUP_AGENT
+        - CLIENT_ADMIN
+        - CLIENT_USER
+      description: User role in the system
+
+    UserStatus:
+      type: string
+      enum:
+        - ACTIVE
+        - SUSPENDED
+        - PENDING
+        - INACTIVE
+      description: User account status
+
+    # Authentication Schemas
+    RegisterRequest:
+      type: object
+      required:
+        - organization
+        - adminUser
+      properties:
+        organization:
+          type: object
+          required:
+            - name
+            - email
+          properties:
+            name:
+              type: string
+              minLength: 2
+              maxLength: 100
+              example: Acme Corporation
+            email:
+              type: string
+              format: email
+              example: admin@acme.com
+            phone:
+              type: string
+              example: "+1234567890"
+            address:
+              type: string
+              example: "123 Business St"
+            city:
+              type: string
+              example: "Business City"
+            website:
+              type: string
+              format: uri
+              example: "https://acme.com"
+            taxId:
+              type: string
+              example: "TAX123456"
+        adminUser:
+          type: object
+          required:
+            - email
+            - username
+            - password
+            - firstName
+            - lastName
+          properties:
+            email:
+              type: string
+              format: email
+              example: admin@acme.com
+            username:
+              type: string
+              minLength: 3
+              maxLength: 50
+              example: admin
+            password:
+              type: string
+              minLength: 12
+              example: SecurePassword123!
+            firstName:
+              type: string
+              minLength: 1
+              maxLength: 50
+              example: John
+            lastName:
+              type: string
+              minLength: 1
+              maxLength: 50
+              example: Doe
+            phone:
+              type: string
+              example: "+1234567890"
+
+    RegisterResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Organization registered successfully
+        organization:
+          type: object
+          properties:
+            id:
+              type: string
+              example: org_123456789
+            name:
+              type: string
+              example: Acme Corporation
+            code:
+              type: string
+              example: ACME001
+            email:
+              type: string
+              example: admin@acme.com
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              example: user_123456789
+            email:
+              type: string
+              example: admin@acme.com
+            username:
+              type: string
+              example: admin
+            firstName:
+              type: string
+              example: John
+            lastName:
+              type: string
+              example: Doe
+            role:
+              $ref: '#/components/schemas/UserRole'
+            status:
+              $ref: '#/components/schemas/UserStatus'
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          example: SecurePassword123!
+        rememberMe:
+          type: boolean
+          default: false
+          example: false
+
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Login successful
+        user:
+          $ref: '#/components/schemas/UserProfile'
+        tokens:
+          $ref: '#/components/schemas/TokenPair'
+        sessionId:
+          type: string
+          example: session_1642248600_abc123def
+
+    TokenPair:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          example: "[JWT_ACCESS_TOKEN]"
+        refreshToken:
+          type: string
+          example: "[JWT_REFRESH_TOKEN]"
+        expiresIn:
+          type: integer
+          description: Access token expiration time in seconds
+          example: 900
+
+    RefreshTokenRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+    RefreshTokenResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Token refreshed successfully
+        tokens:
+          $ref: '#/components/schemas/TokenPair'
+
+    LogoutRequest:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          example: session_1642248600_abc123def
+        logoutFromAll:
+          type: boolean
+          default: false
+          example: false
+
+    LogoutResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Logout successful
+        userId:
+          type: string
+          example: user_123456789
+        timestamp:
+          type: string
+          format: date-time
+
+    # Password Reset Schemas
+    ForgotPasswordRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          example: "[USER_EMAIL]"
+
+    ForgotPasswordResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Password reset email sent successfully
+
+    ResetPasswordRequest:
+      type: object
+      required:
+        - token
+        - newPassword
+        - confirmPassword
+      properties:
+        token:
+          type: string
+          example: "[RESET_TOKEN]"
+        newPassword:
+          type: string
+          minLength: 12
+          example: "[NEW_PASSWORD]"
+        confirmPassword:
+          type: string
+          example: "[NEW_PASSWORD]"
+
+    ResetPasswordResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Password reset successfully
+
+    # User Profile Schemas
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          example: user_123456789
+        email:
+          type: string
+          example: user@example.com
+        username:
+          type: string
+          example: johndoe
+        firstName:
+          type: string
+          example: John
+        lastName:
+          type: string
+          example: Doe
+        phone:
+          type: string
+          example: "+1234567890"
+        avatar:
+          type: string
+          format: uri
+          example: https://example.com/avatar.jpg
+        role:
+          $ref: '#/components/schemas/UserRole'
+        status:
+          $ref: '#/components/schemas/UserStatus'
+        isOnline:
+          type: boolean
+          example: true
+        lastActiveAt:
+          type: string
+          format: date-time
+        organizationId:
+          type: string
+          example: org_123456789
+        organization:
+          $ref: '#/components/schemas/Organization'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          example: org_123456789
+        name:
+          type: string
+          example: Acme Corporation
+        code:
+          type: string
+          example: ACME001
+        email:
+          type: string
+          example: admin@acme.com
+        country:
+          type: string
+          example: MA
+        timezone:
+          type: string
+          example: UTC
+        currency:
+          type: string
+          example: MAD
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+          example: John
+        lastName:
+          type: string
+          example: Doe
+        phone:
+          type: string
+          example: "+1234567890"
+        preferences:
+          type: object
+          properties:
+            language:
+              type: string
+              enum: [en, fr]
+              example: en
+            timezone:
+              type: string
+              example: UTC
+            notifications:
+              type: object
+              properties:
+                email:
+                  type: boolean
+                  example: true
+                push:
+                  type: boolean
+                  example: true
+                sms:
+                  type: boolean
+                  example: false
+
+    UpdateProfileResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Profile updated successfully
+        user:
+          $ref: '#/components/schemas/UserProfile'
+
+    ChangePasswordRequest:
+      type: object
+      required:
+        - currentPassword
+        - newPassword
+        - confirmPassword
+      properties:
+        currentPassword:
+          type: string
+          example: OldPassword123!
+        newPassword:
+          type: string
+          minLength: 12
+          example: NewSecurePassword123!
+        confirmPassword:
+          type: string
+          example: NewSecurePassword123!
+
+    ChangePasswordResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Password changed successfully
+        passwordStrength:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 0
+              maximum: 4
+              example: 4
+            feedback:
+              type: string
+              example: Strong password
+
+    # Session Management Schemas
+    SessionsResponse:
+      type: object
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionInfo'
+        total:
+          type: integer
+          example: 3
+        active:
+          type: integer
+          example: 2
+
+    SessionInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          example: session_123456789
+        sessionToken:
+          type: string
+          example: session_1642248600_abc123def
+        userId:
+          type: string
+          example: user_123456789
+        ipAddress:
+          type: string
+          example: 192.168.1.100
+        userAgent:
+          type: string
+          example: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+        isActive:
+          type: boolean
+          example: true
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        lastActivity:
+          type: string
+          format: date-time
+        location:
+          type: object
+          properties:
+            country:
+              type: string
+              example: Morocco
+            city:
+              type: string
+              example: Casablanca
+        device:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [desktop, mobile, tablet]
+              example: desktop
+            os:
+              type: string
+              example: Windows
+            browser:
+              type: string
+              example: Chrome
+
+    SessionStats:
+      type: object
+      properties:
+        totalSessions:
+          type: integer
+          example: 5
+        activeSessions:
+          type: integer
+          example: 2
+        expiredSessions:
+          type: integer
+          example: 3
+        devicesUsed:
+          type: array
+          items:
+            type: string
+          example: ["desktop", "mobile"]
+        locationsUsed:
+          type: array
+          items:
+            type: string
+          example: ["Casablanca", "Rabat"]
+        lastLoginAt:
+          type: string
+          format: date-time
+        averageSessionDuration:
+          type: integer
+          description: Average session duration in seconds
+          example: 3600
+
+    SessionActivity:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          example: session_123456789
+        action:
+          type: string
+          enum: [login, logout, refresh, activity]
+          example: login
+        timestamp:
+          type: string
+          format: date-time
+        ipAddress:
+          type: string
+          example: 192.168.1.100
+        userAgent:
+          type: string
+          example: Mozilla/5.0...
+        details:
+          type: object
+          properties:
+            loginMethod:
+              type: string
+              example: password
+            rememberMe:
+              type: boolean
+              example: false
+
+    TerminateSessionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Session terminated successfully
+        sessionId:
+          type: string
+          example: session_123456789
+        terminatedAt:
+          type: string
+          format: date-time
+
+    # User Presence Schemas
+    UserPresence:
+      type: object
+      properties:
+        userId:
+          type: string
+          example: user_123456789
+        isOnline:
+          type: boolean
+          example: true
+        lastActiveAt:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/UserStatus'
+        currentSession:
+          type: object
+          properties:
+            sessionId:
+              type: string
+              example: session_123456789
+            device:
+              type: string
+              example: desktop
+            location:
+              type: string
+              example: Casablanca
+
+    BulkUserPresence:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:
+                type: string
+                example: user_123456789
+              isOnline:
+                type: boolean
+                example: true
+              lastActiveAt:
+                type: string
+                format: date-time
+
+    OnlineUsersResponse:
+      type: object
+      properties:
+        onlineUsers:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: user_123456789
+              firstName:
+                type: string
+                example: John
+              lastName:
+                type: string
+                example: Doe
+              role:
+                $ref: '#/components/schemas/UserRole'
+              avatar:
+                type: string
+                example: https://example.com/avatar.jpg
+              lastActiveAt:
+                type: string
+                format: date-time
+        total:
+          type: integer
+          example: 5
+        organizationId:
+          type: string
+          example: org_123456789
+
+    # Admin User Management Schemas
+    UsersListResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserProfile'
+        pagination:
+          $ref: '#/components/schemas/PaginationInfo'
+
+    PaginationInfo:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 100
+        totalPages:
+          type: integer
+          example: 5
+
+    CreateUserRequest:
+      type: object
+      required:
+        - email
+        - username
+        - password
+        - firstName
+        - lastName
+        - role
+      properties:
+        email:
+          type: string
+          format: email
+          example: "[USER_EMAIL]"
+        username:
+          type: string
+          example: newuser
+        password:
+          type: string
+          minLength: 12
+          example: "[SECURE_PASSWORD]"
+        firstName:
+          type: string
+          example: Jane
+        lastName:
+          type: string
+          example: Smith
+        phone:
+          type: string
+          example: "+1234567890"
+        role:
+          $ref: '#/components/schemas/UserRole'
+        teamAssignments:
+          type: array
+          items:
+            type: string
+          example: ["team_123456789"]
+        storeAssignments:
+          type: array
+          items:
+            type: string
+          example: ["store_123456789"]
+
+    CreateUserResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: User created successfully
+        user:
+          $ref: '#/components/schemas/UserProfile'
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+          example: Jane
+        lastName:
+          type: string
+          example: Smith
+        phone:
+          type: string
+          example: "+1234567890"
+        role:
+          $ref: '#/components/schemas/UserRole'
+        status:
+          $ref: '#/components/schemas/UserStatus'
+        teamAssignments:
+          type: array
+          items:
+            type: string
+          example: ["team_123456789"]
+        storeAssignments:
+          type: array
+          items:
+            type: string
+          example: ["store_123456789"]
+
+    UpdateUserResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: User updated successfully
+        user:
+          $ref: '#/components/schemas/UserProfile'
+
+    UserStatusChangeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: User status updated successfully
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              example: user_123456789
+            status:
+              $ref: '#/components/schemas/UserStatus'
+            statusChangedAt:
+              type: string
+              format: date-time
+            reason:
+              type: string
+              example: Policy violation
+
+    # Team Management Schemas
+    TeamsListResponse:
+      type: object
+      properties:
+        teams:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamSummary'
+        pagination:
+          $ref: '#/components/schemas/PaginationInfo'
+
+    TeamSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          example: team_123456789
+        name:
+          type: string
+          example: Customer Service Team
+        description:
+          type: string
+          example: Handles customer inquiries and support
+        leaderId:
+          type: string
+          example: user_123456789
+        leader:
+          type: object
+          properties:
+            id:
+              type: string
+              example: user_123456789
+            firstName:
+              type: string
+              example: John
+            lastName:
+              type: string
+              example: Doe
+        memberCount:
+          type: integer
+          example: 5
+        storeCount:
+          type: integer
+          example: 3
+        createdAt:
+          type: string
+          format: date-time
+
+    TeamDetails:
+      type: object
+      properties:
+        id:
+          type: string
+          example: team_123456789
+        name:
+          type: string
+          example: Customer Service Team
+        description:
+          type: string
+          example: Handles customer inquiries and support
+        leaderId:
+          type: string
+          example: user_123456789
+        leader:
+          type: object
+          properties:
+            id:
+              type: string
+              example: user_123456789
+            firstName:
+              type: string
+              example: John
+            lastName:
+              type: string
+              example: Doe
+            email:
+              type: string
+              example: john@example.com
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: user_987654321
+              firstName:
+                type: string
+                example: Jane
+              lastName:
+                type: string
+                example: Smith
+              role:
+                $ref: '#/components/schemas/UserRole'
+              joinedAt:
+                type: string
+                format: date-time
+        storeAssignments:
+          type: array
+          items:
+            type: object
+            properties:
+              storeId:
+                type: string
+                example: store_123456789
+              storeName:
+                type: string
+                example: Main Store
+              assignedAt:
+                type: string
+                format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateTeamRequest:
+      type: object
+      required:
+        - name
+        - leaderId
+      properties:
+        name:
+          type: string
+          example: New Support Team
+        description:
+          type: string
+          example: Handles advanced customer support
+        leaderId:
+          type: string
+          example: user_123456789
+
+    CreateTeamResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Team created successfully
+        team:
+          $ref: '#/components/schemas/TeamDetails'
+
+    UpdateTeamRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Updated Support Team
+        description:
+          type: string
+          example: Updated description
+        leaderId:
+          type: string
+          example: user_123456789
+
+    UpdateTeamResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Team updated successfully
+        team:
+          $ref: '#/components/schemas/TeamDetails'
+
+    # Notification Schemas
+    NotificationsResponse:
+      type: object
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        total:
+          type: integer
+          example: 10
+        unread:
+          type: integer
+          example: 3
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          example: notif_123456789
+        type:
+          type: string
+          enum: [PERMISSION_UPDATE, SESSION_UPDATE, SECURITY_EVENT, TEAM_ASSIGNMENT]
+          example: PERMISSION_UPDATE
+        title:
+          type: string
+          example: Role Updated
+        message:
+          type: string
+          example: Your role has been updated to Team Leader
+        data:
+          type: object
+          properties:
+            oldRole:
+              type: string
+              example: CALL_CENTER_AGENT
+            newRole:
+              type: string
+              example: TEAM_LEADER
+        read:
+          type: boolean
+          example: false
+        createdAt:
+          type: string
+          format: date-time
+
+    # Health Check Schemas
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          example: healthy
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+          properties:
+            database:
+              type: string
+              enum: [healthy, unhealthy]
+              example: healthy
+            redis:
+              type: string
+              enum: [healthy, unhealthy]
+              example: healthy
+            websocket:
+              type: string
+              enum: [healthy, unhealthy]
+              example: healthy
+        version:
+          type: string
+          example: 1.0.0
+
+    DetailedHealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          example: healthy
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+          properties:
+            database:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: healthy
+                responseTime:
+                  type: string
+                  example: 5ms
+                connections:
+                  type: integer
+                  example: 10
+            redis:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: healthy
+                responseTime:
+                  type: string
+                  example: 2ms
+                memory:
+                  type: string
+                  example: 50MB
+        metrics:
+          type: object
+          properties:
+            activeUsers:
+              type: integer
+              example: 150
+            activeSessions:
+              type: integer
+              example: 200
+            requestsPerMinute:
+              type: integer
+              example: 1500
+
+    # Common Response Schemas
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Operation completed successfully
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              example: Invalid input data
+            details:
+              type: object
+            correlationId:
+              type: string
+              example: req_123456789
+        timestamp:
+          type: string
+          format: date-time
+        adminUser:
+          type: object
+          required:
+            - email
+            - username
+            - password
+            - firstName
+            - lastName
+          properties:
+            email:
+              type: string
+              format: email
+              example: admin@acme.com
+            username:
+              type: string
+              minLength: 3
+              maxLength: 50
+              example: admin
+            password:
+              type: string
+              minLength: 12
+              example: SecurePassword123!
+              description: Must contain uppercase, lowercase, number, and special character
+            firstName:
+              type: string
+              example: John
+            lastName:
+              type: string
+              example: Doe
+            phone:
+              type: string
+              example: "+1234567890"
+
+    RegisterResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Organization registered successfully
+        organization:
+          type: object
+          properties:
+            id:
+              type: string
+              example: org_123456789
+            name:
+              type: string
+              example: Acme Corporation
+            code:
+              type: string
+              example: ACME001
+            email:
+              type: string
+              example: admin@acme.com
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              example: user_123456789
+            email:
+              type: string
+              example: admin@acme.com
+            username:
+              type: string
+              example: admin
+            firstName:
+              type: string
+              example: John
+            lastName:
+              type: string
+              example: Doe
+            role:
+              $ref: '#/components/schemas/UserRole'
+            status:
+              $ref: '#/components/schemas/UserStatus'
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          example: SecurePassword123!
+        rememberMe:
+          type: boolean
+          default: false
+          description: Extend refresh token validity to 30 days
+
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Login successful
+        user:
+          $ref: '#/components/schemas/UserInfo'
+        tokens:
+          type: object
+          properties:
+            accessToken:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            refreshToken:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            expiresIn:
+              type: integer
+              example: 900
+              description: Access token expiry in seconds
+        sessionId:
+          type: string
+          example: session_1642248600_abc123def
+
+    RefreshTokenRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+    RefreshTokenResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Token refreshed successfully
+        tokens:
+          type: object
+          properties:
+            accessToken:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            refreshToken:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            expiresIn:
+              type: integer
+              example: 900
+
+    LogoutRequest:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          example: session_1642248600_abc123def
+        logoutFromAll:
+          type: boolean
+          default: false
+          description: Logout from all devices
+
+    LogoutResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Logout successful
+        userId:
+          type: string
+          example: user_123456789
+        timestamp:
+          type: string
+          format: date-time
+
+    # User Schemas
+    UserInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          example: user_123456789
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        username:
+          type: string
+          example: johndoe
+        firstName:
+          type: string
+          example: John
+        lastName:
+          type: string
+          example: Doe
+        role:
+          $ref: '#/components/schemas/UserRole'
+        status:
+          $ref: '#/components/schemas/UserStatus'
+        organizationId:
+          type: string
+          example: org_123456789
+        isOnline:
+          type: boolean
+          example: true
+
+    UserProfile:
+      allOf:
+        - $ref: '#/components/schemas/UserInfo'
+        - type: object
+          properties:
+            phone:
+              type: string
+              example: "+1234567890"
+            avatar:
+              type: string
+              format: uri
+              example: https://example.com/avatar.jpg
+            lastActiveAt:
+              type: string
+              format: date-time
+            organization:
+              type: object
+              properties:
+                id:
+                  type: string
+                  example: org_123456789
+                name:
+                  type: string
+                  example: Acme Corporation
+                code:
+                  type: string
+                  example: ACME001
+                email:
+                  type: string
+                  example: admin@acme.com
+                country:
+                  type: string
+                  example: MA
+                timezone:
+                  type: string
+                  example: UTC
+                currency:
+                  type: string
+                  example: MAD
+            preferences:
+              type: object
+              properties:
+                language:
+                  type: string
+                  example: en
+                timezone:
+                  type: string
+                  example: UTC
+                notifications:
+                  type: object
+                  properties:
+                    email:
+                      type: boolean
+                      example: true
+                    push:
+                      type: boolean
+                      example: true
+                    sms:
+                      type: boolean
+                      example: false
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        firstName:
+          type: string
+          example: John
+        lastName:
+          type: string
+          example: Doe
+        phone:
+          type: string
+          example: "+1234567890"
+        preferences:
+          type: object
+          properties:
+            language:
+              type: string
+              example: en
+            timezone:
+              type: string
+              example: UTC
+            notifications:
+              type: object
+              properties:
+                email:
+                  type: boolean
+                  example: true
+                push:
+                  type: boolean
+                  example: true
+                sms:
+                  type: boolean
+                  example: false
+
+    UpdateProfileResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Profile updated successfully
+        user:
+          $ref: '#/components/schemas/UserProfile'
+
+    ChangePasswordRequest:
+      type: object
+      required:
+        - currentPassword
+        - newPassword
+        - confirmPassword
+      properties:
+        currentPassword:
+          type: string
+          example: OldPassword123!
+        newPassword:
+          type: string
+          minLength: 12
+          example: NewSecurePassword123!
+        confirmPassword:
+          type: string
+          example: NewSecurePassword123!
+
+    ChangePasswordResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Password changed successfully
+        passwordStrength:
+          type: object
+          properties:
+            score:
+              type: integer
+              minimum: 1
+              maximum: 5
+              example: 4
+            feedback:
+              type: string
+              example: Strong password
+
+    # Session Management Schemas
+    SessionInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          example: session_123456789
+        sessionToken:
+          type: string
+          example: session_1642248600_abc123def
+        userId:
+          type: string
+          example: user_123456789
+        ipAddress:
+          type: string
+          example: 192.168.1.100
+        userAgent:
+          type: string
+          example: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+        isActive:
+          type: boolean
+          example: true
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        lastActivity:
+          type: string
+          format: date-time
+        location:
+          type: object
+          properties:
+            country:
+              type: string
+              example: Morocco
+            city:
+              type: string
+              example: Casablanca
+        device:
+          type: object
+          properties:
+            type:
+              type: string
+              example: desktop
+            os:
+              type: string
+              example: Windows
+            browser:
+              type: string
+              example: Chrome
+
+    SessionsResponse:
+      type: object
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionInfo'
+        total:
+          type: integer
+          example: 1
+        active:
+          type: integer
+          example: 1
+
+    SessionStats:
+      type: object
+      properties:
+        totalSessions:
+          type: integer
+          example: 5
+        activeSessions:
+          type: integer
+          example: 2
+        expiredSessions:
+          type: integer
+          example: 3
+        devicesUsed:
+          type: array
+          items:
+            type: string
+          example: ["desktop", "mobile"]
+        locationsUsed:
+          type: array
+          items:
+            type: string
+          example: ["Casablanca", "Rabat"]
+        lastLoginAt:
+          type: string
+          format: date-time
+        averageSessionDuration:
+          type: integer
+          example: 3600
+          description: Average session duration in seconds
+
+    SessionActivity:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          example: session_123456789
+        action:
+          type: string
+          example: login
+        timestamp:
+          type: string
+          format: date-time
+        ipAddress:
+          type: string
+          example: 192.168.1.100
+        userAgent:
+          type: string
+          example: Mozilla/5.0...
+        details:
+          type: object
+          properties:
+            loginMethod:
+              type: string
+              example: password
+            rememberMe:
+              type: boolean
+              example: false
+
+    TerminateSessionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Session terminated successfully
+        sessionId:
+          type: string
+          example: session_123456789
+        terminatedAt:
+          type: string
+          format: date-time
+
+    # User Activity Schemas
+    UserPresence:
+      type: object
+      properties:
+        userId:
+          type: string
+          example: user_123456789
+        isOnline:
+          type: boolean
+          example: true
+        lastActiveAt:
+          type: string
+          format: date-time
+        status:
+          $ref: '#/components/schemas/UserStatus'
+        currentSession:
+          type: object
+          properties:
+            sessionId:
+              type: string
+              example: session_123456789
+            device:
+              type: string
+              example: desktop
+            location:
+              type: string
+              example: Casablanca
+
+    BulkUserPresence:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:
+                type: string
+                example: user_123456789
+              isOnline:
+                type: boolean
+                example: true
+              lastActiveAt:
+                type: string
+                format: date-time
+
+    OnlineUsersResponse:
+      type: object
+      properties:
+        onlineUsers:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: user_123456789
+              firstName:
+                type: string
+                example: John
+              lastName:
+                type: string
+                example: Doe
+              role:
+                $ref: '#/components/schemas/UserRole'
+              avatar:
+                type: string
+                format: uri
+                example: https://example.com/avatar.jpg
+              lastActiveAt:
+                type: string
+                format: date-time
+        total:
+          type: integer
+          example: 1
+        organizationId:
+          type: string
+          example: org_123456789
+
+    # Admin Schemas
+    CreateUserRequest:
+      type: object
+      required:
+        - email
+        - username
+        - password
+        - firstName
+        - lastName
+        - role
+      properties:
+        email:
+          type: string
+          format: email
+          example: new

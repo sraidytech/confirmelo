@@ -79,8 +79,8 @@ export class RequestLoggingMiddleware implements NestMiddleware {
         },
       });
 
-      // Call original end method
-      originalEnd.call(this, chunk, encoding);
+      // Call original end method and return the result
+      return originalEnd.call(this, chunk, encoding);
     };
 
     next();

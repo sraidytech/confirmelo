@@ -93,6 +93,10 @@ export class OAuth2Service {
         redirect_uri: config.redirectUri,
         scope: config.scopes.join(' '),
         state,
+        // Force consent screen to show even if user previously granted permissions
+        prompt: 'consent',
+        // Ensure fresh authentication
+        access_type: 'offline',
       });
 
       let codeVerifier: string | undefined;
@@ -370,6 +374,37 @@ export class OAuth2Service {
         connectionId,
       });
       throw new UnauthorizedException('Failed to get access token');
+    }
+  }
+
+  /**
+   * Revoke OAuth2 connection and mark as revoked
+   */
+  async revokeConnection(connectionId: string): Promise<void> {
+    try {
+      this.logger.log('Revoking OAuth2 connection', { connectionId });
+
+      // Update connection status to revoked
+      await this.prismaService.platformConnection.update({
+        where: { id: connectionId },
+        data: {
+          status: ConnectionStatus.REVOKED,
+          accessToken: null,
+          refreshToken: null,
+          tokenExpiresAt: null,
+          lastErrorAt: new Date(),
+          lastErrorMessage: 'Connection revoked by user',
+          updatedAt: new Date(),
+        },
+      });
+
+      this.logger.log('Successfully revoked OAuth2 connection', { connectionId });
+    } catch (error) {
+      this.logger.error('Failed to revoke OAuth2 connection', {
+        error: error.message,
+        connectionId,
+      });
+      throw new Error(`Failed to revoke connection: ${error.message}`);
     }
   }
 

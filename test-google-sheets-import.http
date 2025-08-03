@@ -1,0 +1,40 @@
+# Test Google Sheets Import Functionality
+# Replace YOUR_JWT_TOKEN and CONNECTION_ID with actual values
+
+### Variables
+@baseUrl = http://localhost:3001/api
+@authToken = YOUR_JWT_TOKEN_HERE
+@connectionId = YOUR_CONNECTION_ID_HERE
+
+### 1. List available spreadsheets (should show empty or limited results with drive.file scope)
+GET {{baseUrl}}/auth/oauth2/google-sheets/connections/{{connectionId}}/available-spreadsheets
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+### 2. Import an existing spreadsheet by URL
+POST {{baseUrl}}/auth/oauth2/google-sheets/connections/{{connectionId}}/add-existing-spreadsheet
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit"
+}
+
+### 3. Import an existing spreadsheet by ID only
+POST {{baseUrl}}/auth/oauth2/google-sheets/connections/{{connectionId}}/add-existing-spreadsheet
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "spreadsheetUrl": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+}
+
+### 4. List available spreadsheets again (should now show imported spreadsheets)
+GET {{baseUrl}}/auth/oauth2/google-sheets/connections/{{connectionId}}/available-spreadsheets
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+### 5. Test connection to make sure it's working
+POST {{baseUrl}}/auth/oauth2/google-sheets/connections/{{connectionId}}/test
+Authorization: Bearer {{authToken}}
+Content-Type: application/json

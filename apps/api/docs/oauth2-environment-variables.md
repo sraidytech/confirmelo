@@ -138,7 +138,7 @@ SHOPIFY_REDIRECT_URI=https://app.confirmelo.com/auth/oauth2/shopify/callback
 
 2. **Required Scopes**:
    - `https://www.googleapis.com/auth/spreadsheets`: Full access to Google Sheets
-   - `https://www.googleapis.com/auth/drive.readonly`: Read access to Google Drive
+   - `https://www.googleapis.com/auth/drive.file`: Access to specific Google Drive files
 
 3. **Redirect URI Format**:
    - Development: `http://localhost:3000/auth/oauth2/google/callback`

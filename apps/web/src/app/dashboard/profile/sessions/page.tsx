@@ -177,7 +177,7 @@ export default function SessionsPage() {
             <strong>API Error:</strong> {apiError}
             <br />
             <span className="text-sm">
-              This might be because the API server is not running or there's a connectivity issue.
+              This might be because the API server is not running or there&apos;s a connectivity issue.
             </span>
           </AlertDescription>
         </Alert>

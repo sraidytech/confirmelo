@@ -34,7 +34,7 @@ describe('GoogleSheetsOAuth2Service', () => {
     tokenUrl: 'https://oauth2.googleapis.com/token',
     scopes: [
       'https://www.googleapis.com/auth/spreadsheets',
-      'https://www.googleapis.com/auth/drive.readonly',
+      'https://www.googleapis.com/auth/drive.file',
     ],
     usePKCE: true,
   };
@@ -44,7 +44,7 @@ describe('GoogleSheetsOAuth2Service', () => {
     refresh_token: 'google-refresh-token',
     expires_in: 3600,
     token_type: 'Bearer',
-    scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly',
+    scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file',
   };
 
   const mockGoogleUserInfo = {
@@ -156,7 +156,7 @@ describe('GoogleSheetsOAuth2Service', () => {
       oauth2ConfigService.getConfig.mockResolvedValue(mockGoogleConfig);
       prismaService.platformConnection.findFirst.mockResolvedValue(null);
       oauth2Service.generateAuthorizationUrl.mockResolvedValue({
-        authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=google-client-id&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Foauth2%2Fgoogle%2Fcallback&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fspreadsheets%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.readonly&state=random-state&code_challenge=challenge&code_challenge_method=S256',
+        authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=google-client-id&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Foauth2%2Fgoogle%2Fcallback&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fspreadsheets%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.file&state=random-state&code_challenge=challenge&code_challenge_method=S256',
         state: 'random-state',
         codeVerifier: 'code-verifier',
         codeChallenge: 'code-challenge',

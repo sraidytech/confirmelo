@@ -255,3 +255,71 @@ export interface AvatarUploadResponse {
   message: string;
   avatarUrl: string;
 }
+
+// Platform Connection Types
+export enum PlatformType {
+  YOUCAN = 'YOUCAN',
+  SHOPIFY = 'SHOPIFY',
+  GOOGLE_SHEETS = 'GOOGLE_SHEETS',
+  MANUAL = 'MANUAL',
+}
+
+export enum ConnectionStatus {
+  ACTIVE = 'ACTIVE',
+  EXPIRED = 'EXPIRED',
+  REVOKED = 'REVOKED',
+  ERROR = 'ERROR',
+}
+
+export interface PlatformConnection {
+  id: string;
+  platformType: PlatformType;
+  platformName: string;
+  status: ConnectionStatus;
+  scopes: string[];
+  tokenExpiresAt?: string;
+  lastSyncAt?: string;
+  syncCount?: number;
+  platformData?: any;
+  createdAt: string;
+  updatedAt: string;
+  user?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+}
+
+export interface InitiatePlatformConnectionDto {
+  platformType: PlatformType;
+  platformName: string;
+  platformData?: any;
+}
+
+export interface CompletePlatformConnectionDto {
+  code: string;
+  state: string;
+  error?: string;
+  error_description?: string;
+}
+
+export interface PlatformConnectionAuthResponse {
+  authorizationUrl: string;
+  state: string;
+}
+
+export interface ConnectionTestResult {
+  success: boolean;
+  error?: string;
+  details?: any;
+  testedAt: string;
+}
+
+export interface PlatformConnectionsResponse {
+  connections: PlatformConnection[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}

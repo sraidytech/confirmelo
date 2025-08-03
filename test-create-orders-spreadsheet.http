@@ -1,0 +1,51 @@
+# Test Create Orders Spreadsheet Functionality
+# Replace YOUR_JWT_TOKEN and CONNECTION_ID with actual values
+
+### Variables
+@baseUrl = http://localhost:3001/api
+@authToken = YOUR_JWT_TOKEN_HERE
+@connectionId = YOUR_CONNECTION_ID_HERE
+
+### 1. Create a new Orders spreadsheet with custom name
+POST {{baseUrl}}/auth/oauth2/google-sheets/connections/{{connectionId}}/create-orders-spreadsheet
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "My Orders Spreadsheet - Test"
+}
+
+### 2. Create a new Orders spreadsheet with default name (empty name)
+POST {{baseUrl}}/auth/oauth2/google-sheets/connections/{{connectionId}}/create-orders-spreadsheet
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": ""
+}
+
+### 3. Test validation - name too long (should fail)
+POST {{baseUrl}}/auth/oauth2/google-sheets/connections/{{connectionId}}/create-orders-spreadsheet
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "name": "This is a very long spreadsheet name that exceeds the 100 character limit and should be rejected by the validation logic in the backend API endpoint"
+}
+
+### 4. Test validation - missing name field (should fail)
+POST {{baseUrl}}/auth/oauth2/google-sheets/connections/{{connectionId}}/create-orders-spreadsheet
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{}
+
+### 5. List available spreadsheets (should show the created spreadsheet)
+GET {{baseUrl}}/auth/oauth2/google-sheets/connections/{{connectionId}}/available-spreadsheets
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+### 6. Test connection to make sure it's working
+POST {{baseUrl}}/auth/oauth2/google-sheets/connections/{{connectionId}}/test
+Authorization: Bearer {{authToken}}
+Content-Type: application/json

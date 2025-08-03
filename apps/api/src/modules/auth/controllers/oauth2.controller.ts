@@ -241,8 +241,8 @@ export class OAuth2Controller {
     @CurrentUser() user: any,
   ): Promise<ConnectionListResponseDto> {
     try {
-      const page = query.page || 1;
-      const limit = Math.min(query.limit || 10, 50); // Max 50 items per page
+      const page = Number(query.page) || 1;
+      const limit = Math.min(Number(query.limit) || 10, 50); // Max 50 items per page
       const skip = (page - 1) * limit;
 
       const where: any = {

@@ -390,6 +390,76 @@ class ApiClient {
     }
   }
 
+  // Platform Connection endpoints
+  async initiatePlatformConnection(data: { platformType: string; platformName: string; platformData?: any }) {
+    try {
+      const response = await this.client.post('/auth/oauth2/initiate', data);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async completePlatformConnection(data: { code: string; state: string; error?: string; error_description?: string }) {
+    try {
+      const response = await this.client.post('/auth/oauth2/complete', data);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getPlatformConnections(params?: { platformType?: string; status?: string; page?: number; limit?: number }) {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.platformType) queryParams.append('platformType', params.platformType);
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      
+      const response = await this.client.get(`/auth/oauth2/connections?${queryParams.toString()}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getPlatformConnection(connectionId: string) {
+    try {
+      const response = await this.client.get(`/auth/oauth2/connections/${connectionId}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async refreshPlatformConnection(connectionId: string) {
+    try {
+      const response = await this.client.post(`/auth/oauth2/connections/${connectionId}/refresh`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async testPlatformConnection(connectionId: string) {
+    try {
+      const response = await this.client.post(`/auth/oauth2/connections/${connectionId}/test`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async revokePlatformConnection(connectionId: string) {
+    try {
+      const response = await this.client.delete(`/auth/oauth2/connections/${connectionId}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
   // Admin endpoints
   async getAdminUsers() {
     try {

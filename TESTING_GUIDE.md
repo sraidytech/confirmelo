@@ -1,219 +1,336 @@
-# Testing Guide for Confirmelo Authentication System
+# Platform Connection Testing Guide
 
-## 🚀 Quick Testing Strategy (No Docker Rebuilds)
+## Overview
+This guide explains how to test the platform connection management system, including OAuth2 integrations with Youcan Shop and Google Sheets.
 
-### 1. **Local Development Testing** (Fastest)
+## Prerequisites
+
+### 1. Environment Setup
+Ensure your environment variables are configured:
+
 ```bash
-# Backend API Testing
+# Backend (.env)
+DATABASE_URL="postgresql://..."
+REDIS_URL="redis://localhost:6379"
+JWT_SECRET="your-jwt-secret"
+OAUTH2_ENCRYPTION_KEY="your-encryption-key"
+
+# OAuth2 Configuration
+YOUCAN_CLIENT_ID="your-youcan-client-id"
+YOUCAN_CLIENT_SECRET="your-youcan-client-secret"
+YOUCAN_REDIRECT_URI="http://localhost:3000/auth/oauth2-callback"
+
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+GOOGLE_REDIRECT_URI="http://localhost:3000/auth/oauth2-callback"
+
+# Frontend (.env.local)
+NEXT_PUBLIC_API_URL="http://localhost:3001"
+```
+
+### 2. OAuth2 Provider Configuration
+
+#### Youcan Shop Setup
+1. Go to Youcan Partners Dashboard
+2. Create a new app or edit existing app
+3. **IMPORTANT**: Add these redirect URLs:
+   - `http://localhost:3000/auth/oauth2-callback` (for local testing)
+   - `https://yourdomain.com/auth/oauth2-callback` (for production)
+4. Configure required scopes:
+   - `read_orders`
+   - `write_orders`
+   - `read_products`
+   - `read_customers`
+
+#### Google OAuth2 Setup
+1. Go to Google Cloud Console
+2. Enable Google Sheets API
+3. Create OAuth2 credentials
+4. **IMPORTANT**: Add these authorized redirect URIs:
+   - `http://localhost:3000/auth/oauth2-callback` (for local testing)
+   - `https://yourdomain.com/auth/oauth2-callback` (for production)
+5. Configure scopes:
+   - `https://www.googleapis.com/auth/spreadsheets.readonly`
+
+## Testing Steps
+
+### 1. Start the Development Environment
+
+```bash
+# Terminal 1: Start the API server
 cd apps/api
-npm run test                    # Run all tests
-npm run test:watch             # Watch mode for development
-npm run test -- auth          # Test specific module
-npm run test -- --coverage    # With coverage report
+npm run dev
 
-# Frontend Testing
-cd apps/web
-npm run test                   # Run all tests
-npm run test:watch            # Watch mode
-npm run dev                   # Start dev server (hot reload)
-```
-
-### 2. **API Testing Without Docker** (Fast)
-```bash
-# Start local PostgreSQL and Redis
-# Option A: Use local installations
-# Option B: Use Docker for services only
-docker run -d --name postgres-test -p 5432:5432 -e POSTGRES_PASSWORD=password postgres:15
-docker run -d --name redis-test -p 6379:6379 redis:7-alpine
-
-# Run API locally
-cd apps/api
-cp .env.example .env           # Configure for local services
-npm run start:dev              # Hot reload enabled
-```
-
-### 3. **Frontend Route Testing** (Current Issue)
-```bash
-# Test frontend without Docker
-cd apps/web
-npm run dev                    # Start on localhost:3000
-
-# Test specific routes
-curl http://localhost:3000/test           # ✅ Working
-curl http://localhost:3000/auth/login     # 🔴 404 Error
-curl http://localhost:3000/dashboard      # ✅ Working
-```
-
-## 🐳 Docker Optimization Strategies
-
-### 1. **Multi-Stage Builds** (Already implemented)
-```dockerfile
-# Current Dockerfile.dev uses multi-stage builds
-# This reduces rebuild time by caching layers
-```
-
-### 2. **Docker Layer Caching**
-```bash
-# Use BuildKit for better caching
-export DOCKER_BUILDKIT=1
-
-# Build with cache mount
-docker-compose -f docker-compose.dev.yml build --no-cache api
-```
-
-### 3. **Selective Service Rebuilds**
-```bash
-# Only rebuild specific services
-docker-compose -f docker-compose.dev.yml build web    # Only web
-docker-compose -f docker-compose.dev.yml build api    # Only api
-
-# Restart without rebuild
-docker-compose -f docker-compose.dev.yml restart web
-docker-compose -f docker-compose.dev.yml restart api
-```
-
-### 4. **Volume Optimization**
-```yaml
-# Current docker-compose.dev.yml uses volumes for hot reload
-volumes:
-  - ./apps/web:/app
-  - /app/node_modules          # Prevents overwriting node_modules
-```
-
-## 🔧 Debugging the 404 Route Issue
-
-### Step 1: Check Next.js Compilation
-```bash
-# Inside web container
-docker-compose -f docker-compose.dev.yml exec web npm run build
-
-# Check for compilation errors
-docker-compose -f docker-compose.dev.yml logs web --tail=50
-```
-
-### Step 2: Verify Route Group Structure
-```bash
-# Check if (auth) route group is properly structured
-ls -la apps/web/src/app/\(auth\)/
-```
-
-### Step 3: Test Route Resolution
-```bash
-# Test Next.js route resolution
+# Terminal 2: Start the web app
 cd apps/web
 npm run dev
-# Visit http://localhost:3000/auth/login directly
 ```
 
-## 🧪 Comprehensive Testing Workflow
+### 2. Access the Platform Connections Page
 
-### Phase 1: Unit Tests (No Docker)
-```bash
-# Backend unit tests
-cd apps/api
-npm run test:watch
+1. Navigate to `http://localhost:3000/auth/login`
+2. Login with admin credentials
+3. Go to `http://localhost:3000/dashboard/platform-connections`
 
-# Frontend component tests  
-cd apps/web
-npm run test:watch
-```
+### 3. Test Connection Creation
 
-### Phase 2: Integration Tests (Minimal Docker)
-```bash
-# Start only required services
-docker-compose -f docker-compose.dev.yml up postgres redis -d
+#### Test Youcan Shop Connection
+1. Click "Add Connection"
+2. Select "Youcan Shop"
+3. Enter connection name: "My Test Youcan Store"
+4. Click "Connect to Youcan Shop"
+5. You should be redirected to Youcan OAuth page
+6. After authorization, you'll return to the callback page
+7. Verify the connection appears in the list
 
-# Run integration tests locally
-cd apps/api
-npm run test:e2e
-```
+#### Test Google Sheets Connection
+1. Click "Add Connection"
+2. Select "Google Sheets"
+3. Enter connection name: "My Test Sheet"
+4. Click "Connect to Google Sheets"
+5. You should be redirected to Google OAuth page
+6. After authorization, you'll return to the callback page
+7. Verify the connection appears in the list
 
-### Phase 3: E2E Tests (Full Docker)
-```bash
-# Only when needed for full system testing
-docker-compose -f docker-compose.dev.yml up -d
-npm run test:e2e:full
-```
+### 4. Test Connection Management
 
-## 🚀 Performance Optimizations
+#### Test Connection Health Check
+1. Find an active connection
+2. Click the test tube icon (🧪)
+3. Verify the test result appears
+4. Check that connection status updates if needed
 
-### 1. **Package.json Scripts Optimization**
-```json
-{
-  "scripts": {
-    "test:unit": "jest --testPathPattern=unit",
-    "test:integration": "jest --testPathPattern=integration", 
-    "test:auth": "jest --testPathPattern=auth",
-    "test:quick": "jest --bail --findRelatedTests",
-    "dev:api": "cd apps/api && npm run start:dev",
-    "dev:web": "cd apps/web && npm run dev"
+#### Test Token Refresh
+1. Find a connection with expired or soon-to-expire token
+2. Click the refresh icon (🔄)
+3. Verify the token expiration time updates
+
+#### Test Connection Revocation
+1. Find any connection
+2. Click the delete icon (🗑️)
+3. Confirm the deletion
+4. Verify the connection status changes to "REVOKED"
+
+## Common Issues and Solutions
+
+### Issue 1: OAuth2 Redirect URL Mismatch
+
+**Symptoms:**
+- "Access blocked: This app's request is invalid" (Google)
+- "404 Not Found" after OAuth authorization (Youcan)
+
+**Solution:**
+1. Check that redirect URLs in OAuth provider match exactly:
+   - Local: `http://localhost:3000/auth/oauth2-callback`
+   - Production: `https://yourdomain.com/auth/oauth2-callback`
+2. Ensure no trailing slashes
+3. Use HTTP for localhost, HTTPS for production
+
+### Issue 2: Missing OAuth2 Configuration
+
+**Symptoms:**
+- "OAuth2 not configured for platform" error
+- Connection initiation fails
+
+**Solution:**
+Check OAuth2 configuration service:
+
+```typescript
+// apps/api/src/modules/auth/services/oauth2-config.service.ts
+@Injectable()
+export class OAuth2ConfigService {
+  async getConfig(platformType: PlatformType): Promise<OAuth2Config | null> {
+    switch (platformType) {
+      case PlatformType.YOUCAN:
+        return {
+          clientId: this.configService.get('YOUCAN_CLIENT_ID'),
+          clientSecret: this.configService.get('YOUCAN_CLIENT_SECRET'),
+          redirectUri: this.configService.get('YOUCAN_REDIRECT_URI'),
+          authorizationUrl: 'https://youcan.shop/oauth/authorize',
+          tokenUrl: 'https://youcan.shop/oauth/token',
+          scopes: ['read_orders', 'write_orders'],
+          usePKCE: true,
+        };
+      
+      case PlatformType.GOOGLE_SHEETS:
+        return {
+          clientId: this.configService.get('GOOGLE_CLIENT_ID'),
+          clientSecret: this.configService.get('GOOGLE_CLIENT_SECRET'),
+          redirectUri: this.configService.get('GOOGLE_REDIRECT_URI'),
+          authorizationUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+          tokenUrl: 'https://oauth2.googleapis.com/token',
+          scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+          usePKCE: true,
+        };
+      
+      default:
+        return null;
+    }
   }
 }
 ```
 
-### 2. **Jest Configuration for Speed**
-```javascript
-// jest.config.js
-module.exports = {
-  testEnvironment: 'node',
-  maxWorkers: '50%',           // Use half CPU cores
-  cache: true,                 // Enable caching
-  bail: 1,                     // Stop on first failure
-  collectCoverageFrom: [
-    'src/**/*.ts',
-    '!src/**/*.spec.ts',
-    '!src/**/*.d.ts'
-  ]
-};
+### Issue 3: CORS Issues
+
+**Symptoms:**
+- Network errors during OAuth flow
+- "Access-Control-Allow-Origin" errors
+
+**Solution:**
+Configure CORS in your API:
+
+```typescript
+// apps/api/src/main.ts
+app.enableCors({
+  origin: [
+    'http://localhost:3000',
+    'https://yourdomain.com',
+  ],
+  credentials: true,
+});
 ```
 
-### 3. **Docker Compose Override for Development**
-```yaml
-# docker-compose.override.yml (auto-loaded)
-version: '3.8'
-services:
-  web:
-    command: npm run dev
-    environment:
-      - NODE_ENV=development
-      - CHOKIDAR_USEPOLLING=true    # Better file watching
-    
-  api:
-    command: npm run start:dev
-    environment:
-      - NODE_ENV=development
+## Manual Testing Checklist
+
+### Frontend Components
+- [ ] Platform connections page loads
+- [ ] Add connection dialog opens
+- [ ] Platform selection works
+- [ ] Connection form validation works
+- [ ] OAuth2 redirect initiates correctly
+- [ ] Callback page handles success/error states
+- [ ] Connection list displays correctly
+- [ ] Connection actions (test, refresh, delete) work
+- [ ] Status indicators show correct states
+- [ ] Pagination works with multiple connections
+
+### Backend API
+- [ ] `GET /auth/oauth2/connections` returns connections
+- [ ] `POST /auth/oauth2/initiate` generates auth URL
+- [ ] `POST /auth/oauth2/complete` handles callback
+- [ ] `POST /auth/oauth2/connections/:id/test` tests connection
+- [ ] `POST /auth/oauth2/connections/:id/refresh` refreshes tokens
+- [ ] `DELETE /auth/oauth2/connections/:id` revokes connection
+- [ ] Error handling works for invalid requests
+- [ ] Rate limiting prevents abuse
+- [ ] Audit logging tracks all operations
+
+### Database
+- [ ] PlatformConnection records are created correctly
+- [ ] Token encryption/decryption works
+- [ ] Status updates persist correctly
+- [ ] Audit logs are created for all operations
+
+## Automated Testing
+
+### Run Unit Tests
+```bash
+# Backend tests
+cd apps/api
+npm run test
+
+# Frontend tests
+cd apps/web
+npm run test
 ```
 
-## 🔍 Current Issue Analysis
+### Run Integration Tests
+```bash
+# Backend integration tests
+cd apps/api
+npm run test:e2e
 
-Based on the logs, the issue is:
-1. ✅ `/test` route works (200 OK)
-2. 🔴 `/auth/login` returns 404
-3. ✅ `/dashboard` works (200 OK)
+# Specific platform connection tests
+npm run test -- --testNamePattern="Platform Connection"
+```
 
-### Root Cause Investigation:
-1. **Route Group Issue**: `(auth)` folder might not be recognized
-2. **Layout Conflicts**: Multiple AuthProvider imports
-3. **Component Dependencies**: Missing UI components
-4. **Build Process**: Next.js compilation errors
+## Debugging Tips
 
-### Immediate Fix Strategy:
-1. Fix AuthProvider conflicts
-2. Verify all UI components exist
-3. Test route structure locally
-4. Check Next.js build output
+### Enable Debug Logging
+```bash
+# Backend
+DEBUG=oauth2:* npm run dev
 
-## 📊 Testing Metrics
+# Check logs for OAuth2 operations
+tail -f logs/oauth2.log
+```
 
-### Current Status:
-- ✅ Backend API: 100% functional
-- ✅ Database: Connected and working
-- ✅ Docker: Services running
-- 🔴 Frontend Routes: 404 errors on auth pages
-- ✅ Other Routes: Working correctly
+### Check Redis State
+```bash
+# Connect to Redis
+redis-cli
 
-### Success Criteria:
-- [ ] All auth routes return 200 OK
-- [ ] Login/register forms render correctly
-- [ ] Authentication flow works end-to-end
-- [ ] Task 9.1 marked as completed
+# Check OAuth2 state data
+KEYS oauth2:*
+GET oauth2:state:your-state-value
+```
+
+### Inspect Database
+```bash
+# Connect to PostgreSQL
+psql $DATABASE_URL
+
+# Check platform connections
+SELECT id, platform_type, platform_name, status, created_at FROM "PlatformConnection";
+
+# Check audit logs
+SELECT * FROM "AuditLog" WHERE entity_type = 'PlatformConnection' ORDER BY created_at DESC LIMIT 10;
+```
+
+## Production Deployment Considerations
+
+### Environment Variables
+- Use secure, randomly generated secrets
+- Configure proper redirect URLs for your domain
+- Enable HTTPS for all OAuth2 flows
+
+### Security
+- Implement rate limiting for OAuth2 endpoints
+- Monitor for suspicious OAuth2 activity
+- Regularly rotate OAuth2 client secrets
+- Use secure token storage with proper encryption
+
+### Monitoring
+- Set up alerts for failed OAuth2 flows
+- Monitor connection health and token expiration
+- Track OAuth2 usage patterns
+- Log all security-relevant events
+
+## Troubleshooting OAuth2 Flows
+
+### Debug OAuth2 State Issues
+```typescript
+// Check state validation in OAuth2Service
+private async validateState(state: string): Promise<any> {
+  const stateData = await this.redisService.get(`oauth2:state:${state}`);
+  
+  if (!stateData) {
+    this.logger.error('State not found in Redis', { state });
+    throw new UnauthorizedException('Invalid or expired state parameter');
+  }
+  
+  // Add debug logging
+  this.logger.debug('State validation successful', { 
+    state, 
+    stateData,
+    age: Date.now() - stateData.timestamp 
+  });
+  
+  return stateData;
+}
+```
+
+### Debug Token Exchange
+```typescript
+// Add logging to token exchange
+const response = await this.httpClient.post(config.tokenUrl, tokenParams);
+
+this.logger.debug('Token exchange response', {
+  status: response.status,
+  hasAccessToken: !!response.data.access_token,
+  hasRefreshToken: !!response.data.refresh_token,
+  expiresIn: response.data.expires_in,
+});
+```
+
+This guide should help you properly test and debug the platform connection system. The key issue you're facing is the redirect URL configuration - make sure they match exactly in both your OAuth2 providers and your application configuration.

@@ -1,0 +1,63 @@
+# Revoke Google Sheets Connections Script
+# This will help you revoke existing Google Sheets connections so you can create new ones with updated scopes
+
+### Variables
+@baseUrl = http://localhost:3001/api
+@authToken = YOUR_JWT_TOKEN_HERE
+
+### 1. List all Google Sheets connections
+GET {{baseUrl}}/auth/oauth2/connections?platformType=GOOGLE_SHEETS
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+### 2. Revoke specific Google Sheets connections (replace with actual connection IDs from step 1)
+# You'll need to run step 1 first, then replace these IDs with the actual ones
+
+DELETE {{baseUrl}}/auth/oauth2/connections/cmdun9dtj0001u6q6ozvvkyue
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+###
+DELETE {{baseUrl}}/auth/oauth2/connections/cmdukwnoh0001y4x8zjaa2uml
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+###
+DELETE {{baseUrl}}/auth/oauth2/connections/cmdukct7m0001a6w0zjpo3vpf
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+###
+DELETE {{baseUrl}}/auth/oauth2/connections/cmduk3mi00001wxuu2aehvrgl
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+###
+DELETE {{baseUrl}}/auth/oauth2/connections/cmdulzegj0001cjbpj8vh7f64
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+###
+DELETE {{baseUrl}}/auth/oauth2/connections/cmdum78ph0001d9mz57inbqku
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+###
+DELETE {{baseUrl}}/auth/oauth2/connections/cmdult7y600011r6pt696j2qj
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+###
+DELETE {{baseUrl}}/auth/oauth2/connections/cmdumehsr0001637g1dz65a6p
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+### 3. After revoking, try creating a new Google Sheets connection
+POST {{baseUrl}}/auth/oauth2/initiate
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "platformType": "GOOGLE_SHEETS",
+  "platformName": "My Google Sheets Connection"
+}

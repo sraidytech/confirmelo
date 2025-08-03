@@ -12,7 +12,8 @@ import {
   BarChart3,
   Settings,
   UserCheck,
-  Building2
+  Building2,
+  Link2
 } from 'lucide-react';
 
 const iconMap = {
@@ -20,6 +21,7 @@ const iconMap = {
   '/orders': ShoppingCart,
   '/teams': Users,
   '/dashboard/admin/users': UserCheck,
+  '/dashboard/platform-connections': Link2,
   '/analytics': BarChart3,
   '/clients': Building2,
   '/settings': Settings,

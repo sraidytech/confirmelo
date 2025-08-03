@@ -38,7 +38,7 @@ describe('GoogleSheetsOAuth2Controller', () => {
     tokenExpiresAt: new Date(Date.now() + 3600000),
     scopes: [
       'https://www.googleapis.com/auth/spreadsheets',
-      'https://www.googleapis.com/auth/drive.readonly',
+      'https://www.googleapis.com/auth/drive.file',
     ],
     userId: mockUser.id,
     organizationId: mockUser.organizationId,

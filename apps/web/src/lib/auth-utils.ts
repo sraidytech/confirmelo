@@ -34,6 +34,7 @@ export const ROLE_ROUTES: Record<string, UserRole[]> = {
   ],
   '/settings': [UserRole.SUPER_ADMIN, UserRole.ADMIN],
   '/dashboard/admin/users': [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER],
+  '/dashboard/platform-connections': [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN],
   '/clients': [UserRole.SUPER_ADMIN, UserRole.ADMIN],
 };
 
@@ -276,6 +277,12 @@ export function getNavigationItems(userRole: UserRole) {
       href: '/dashboard/admin/users',
       permission: 'users:read',
       roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER],
+    },
+    {
+      name: 'Platform Connections',
+      href: '/dashboard/platform-connections',
+      permission: 'platform:read',
+      roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN],
     },
     {
       name: 'Analytics',

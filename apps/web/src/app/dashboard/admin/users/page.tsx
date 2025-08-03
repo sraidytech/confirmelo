@@ -42,15 +42,6 @@ function AdminUsersPageContent() {
   // Check if current user is admin
   const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPER_ADMIN';
 
-  // Show loading while auth is initializing
-  if (authLoading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <LoadingSpinner size="lg" text={t('common.actions.loading')} />
-      </div>
-    );
-  }
-
   useEffect(() => {
     if (!isAdmin || !currentUser) return;
 
@@ -71,6 +62,15 @@ function AdminUsersPageContent() {
 
     fetchUsers();
   }, [isAdmin, currentUser]);
+
+  // Show loading while auth is initializing
+  if (authLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <LoadingSpinner size="lg" text={t('common.actions.loading')} />
+      </div>
+    );
+  }
 
   const filteredUsers = users.filter(user =>
     user.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||

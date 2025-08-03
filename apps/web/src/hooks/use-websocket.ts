@@ -117,7 +117,10 @@ export function usePresence() {
     if (!isConnected) return;
 
     const handleUserOnline = (userId: string) => {
-      setOnlineUsers(prev => [...new Set([...prev, userId])]);
+      setOnlineUsers(prev => {
+        const uniqueUsers = new Set([...prev, userId]);
+        return Array.from(uniqueUsers);
+      });
     };
 
     const handleUserOffline = (userId: string) => {

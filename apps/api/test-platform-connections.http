@@ -1,0 +1,59 @@
+# Platform Connection Management API Tests
+# Use this file with REST Client extension in VS Code or similar tools
+
+### Variables
+@baseUrl = http://localhost:3001/api
+@authToken = YOUR_JWT_TOKEN_HERE
+
+### 1. List Platform Connections
+GET {{baseUrl}}/auth/oauth2/connections
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+### 2. List Connections with Filters
+GET {{baseUrl}}/auth/oauth2/connections?platformType=YOUCAN&status=ACTIVE&page=1&limit=10
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+### 3. Get Specific Connection
+GET {{baseUrl}}/auth/oauth2/connections/conn-123
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+### 4. Initiate OAuth2 Connection
+POST {{baseUrl}}/auth/oauth2/initiate
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "platformType": "YOUCAN",
+  "platformName": "My Test Store",
+  "platformData": {
+    "storeId": "test-store-123"
+  }
+}
+
+### 5. Complete OAuth2 Connection (after getting code from OAuth provider)
+POST {{baseUrl}}/auth/oauth2/complete
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+  "code": "authorization_code_from_provider",
+  "state": "state_parameter_from_initiate"
+}
+
+### 6. Test Connection Health
+POST {{baseUrl}}/auth/oauth2/connections/conn-123/test
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+### 7. Refresh Connection Token
+POST {{baseUrl}}/auth/oauth2/connections/conn-123/refresh
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+### 8. Revoke Connection
+DELETE {{baseUrl}}/auth/oauth2/connections/conn-123
+Authorization: Bearer {{authToken}}
+Content-Type: application/json

@@ -192,10 +192,51 @@ model PlatformConnection {
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
   
+  // Relationships
+  spreadsheetConnections SpreadsheetConnection[]
+  
   @@unique([userId, platformType, platformStoreId])
   @@index([organizationId])
   @@index([status])
   @@index([platformType])
+}
+
+model SpreadsheetConnection {
+  id                    String          @id @default(cuid())
+  
+  // Connection reference
+  connectionId          String
+  connection            PlatformConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  
+  // Spreadsheet details
+  spreadsheetId         String
+  spreadsheetName       String
+  webViewLink           String?
+  
+  // Connection metadata
+  connectedAt           DateTime        @default(now())
+  lastAccessedAt        DateTime?
+  isActive              Boolean         @default(true)
+  
+  // Spreadsheet metadata (cached)
+  sheetsData            Json?           // Array of sheet information
+  permissions           Json?           // Spreadsheet permissions
+  
+  // Sync information
+  lastSyncAt            DateTime?
+  syncCount             Int             @default(0)
+  lastErrorAt           DateTime?
+  lastErrorMessage      String?
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  
+  @@unique([connectionId, spreadsheetId])
+  @@index([connectionId])
+  @@index([spreadsheetId])
+  @@index([isActive])
+  @@index([lastAccessedAt])
 }
 
 // ==================== ORGANIZATION & TEAM MODELS ====================

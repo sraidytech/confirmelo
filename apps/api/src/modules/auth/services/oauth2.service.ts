@@ -37,6 +37,7 @@ export class OAuth2Service {
   private readonly logger = new Logger(OAuth2Service.name);
   private readonly httpClient: AxiosInstance;
   private readonly encryptionKey: string;
+  private readonly refreshQueue: Map<string, Promise<boolean>> = new Map();
 
   constructor(
     private readonly configService: ConfigService,
@@ -228,12 +229,16 @@ export class OAuth2Service {
   }
 
   /**
-   * Refresh access token using refresh token
+   * Refresh access token using refresh token with retry logic
    */
   async refreshAccessToken(
     connectionId: string,
     config: OAuth2Config,
+    retryCount: number = 0,
   ): Promise<OAuth2TokenResponse> {
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second
+
     try {
       const connection = await this.prismaService.platformConnection.findUnique({
         where: { id: connectionId },
@@ -255,12 +260,14 @@ export class OAuth2Service {
       this.logger.log('Refreshing access token', {
         connectionId,
         platformType: connection.platformType,
+        attempt: retryCount + 1,
+        maxRetries: maxRetries + 1,
       });
 
       const response = await this.httpClient.post(config.tokenUrl, tokenParams);
       
       if (response.status !== 200) {
-        throw new Error(`Token refresh failed with status ${response.status}`);
+        throw new Error(`Token refresh failed with status ${response.status}: ${response.data?.error_description || response.statusText}`);
       }
 
       const tokenResponse: OAuth2TokenResponse = response.data;
@@ -272,10 +279,22 @@ export class OAuth2Service {
       // Update connection with new tokens
       await this.updateConnectionTokens(connectionId, tokenResponse);
 
+      // Update platform data with last refresh time
+      await this.prismaService.platformConnection.update({
+        where: { id: connectionId },
+        data: {
+          platformData: {
+            ...(connection.platformData as any || {}),
+            last_token_refresh: new Date().toISOString(),
+          },
+        },
+      });
+
       this.logger.log('Successfully refreshed access token', {
         connectionId,
         platformType: connection.platformType,
         hasNewRefreshToken: !!tokenResponse.refresh_token,
+        attempt: retryCount + 1,
       });
 
       return tokenResponse;
@@ -283,13 +302,49 @@ export class OAuth2Service {
       this.logger.error('Failed to refresh access token', {
         error: error.message,
         connectionId,
+        attempt: retryCount + 1,
+        maxRetries: maxRetries + 1,
       });
 
-      // Mark connection as expired if refresh fails
+      // Check if we should retry
+      const isRetryableError = this.isRetryableTokenError(error);
+      if (isRetryableError && retryCount < maxRetries) {
+        const delay = baseDelay * Math.pow(2, retryCount); // Exponential backoff
+        this.logger.log('Retrying token refresh after delay', {
+          connectionId,
+          delay,
+          nextAttempt: retryCount + 2,
+        });
+
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.refreshAccessToken(connectionId, config, retryCount + 1);
+      }
+
+      // Mark connection as expired if refresh fails permanently
       await this.markConnectionAsExpired(connectionId, error.message);
       
-      throw new UnauthorizedException('Failed to refresh access token');
+      throw new UnauthorizedException(`Failed to refresh access token after ${retryCount + 1} attempts: ${error.message}`);
     }
+  }
+
+  /**
+   * Check if a token error is retryable
+   */
+  private isRetryableTokenError(error: any): boolean {
+    const retryableErrors = [
+      'network error',
+      'timeout',
+      'rate_limited',
+      'temporarily_unavailable',
+      'server_error',
+    ];
+
+    const errorMessage = error.message?.toLowerCase() || '';
+    const errorCode = error.response?.data?.error?.toLowerCase() || '';
+
+    return retryableErrors.some(retryableError => 
+      errorMessage.includes(retryableError) || errorCode.includes(retryableError)
+    ) || (error.response?.status >= 500 && error.response?.status < 600);
   }
 
   /**
@@ -350,7 +405,7 @@ export class OAuth2Service {
   }
 
   /**
-   * Get decrypted access token for a connection
+   * Get decrypted access token for a connection with automatic refresh
    */
   async getAccessToken(connectionId: string): Promise<string> {
     try {
@@ -362,9 +417,33 @@ export class OAuth2Service {
         throw new Error('Connection not found or not active');
       }
 
-      // Check if token is expired
-      if (connection.tokenExpiresAt && connection.tokenExpiresAt < new Date()) {
-        throw new Error('Access token expired');
+      // Check if token needs refresh (expired or expires within 10 minutes)
+      const now = new Date();
+      const tenMinutesFromNow = new Date(now.getTime() + 10 * 60 * 1000);
+      
+      if (connection.tokenExpiresAt && connection.tokenExpiresAt <= tenMinutesFromNow) {
+        this.logger.log('Token expired or expiring soon, attempting refresh', {
+          connectionId,
+          expiresAt: connection.tokenExpiresAt,
+          now: now.toISOString(),
+        });
+
+        // Attempt to refresh the token
+        const refreshed = await this.validateAndRefreshToken(connectionId);
+        if (!refreshed) {
+          throw new Error('Failed to refresh expired token');
+        }
+
+        // Get the updated connection after refresh
+        const updatedConnection = await this.prismaService.platformConnection.findUnique({
+          where: { id: connectionId },
+        });
+
+        if (!updatedConnection || updatedConnection.status !== ConnectionStatus.ACTIVE) {
+          throw new Error('Connection not active after token refresh');
+        }
+
+        return this.decryptToken(updatedConnection.accessToken);
       }
 
       return this.decryptToken(connection.accessToken);
@@ -374,6 +453,91 @@ export class OAuth2Service {
         connectionId,
       });
       throw new UnauthorizedException('Failed to get access token');
+    }
+  }
+
+  /**
+   * Validate and refresh token if needed with queue management
+   */
+  async validateAndRefreshToken(connectionId: string): Promise<boolean> {
+    // Check if there's already a refresh in progress for this connection
+    const existingRefresh = this.refreshQueue.get(connectionId);
+    if (existingRefresh) {
+      this.logger.log('Token refresh already in progress, waiting for completion', {
+        connectionId,
+      });
+      return existingRefresh;
+    }
+
+    // Create a new refresh promise and add it to the queue
+    const refreshPromise = this.performTokenRefresh(connectionId);
+    this.refreshQueue.set(connectionId, refreshPromise);
+
+    try {
+      const result = await refreshPromise;
+      return result;
+    } finally {
+      // Remove from queue when done
+      this.refreshQueue.delete(connectionId);
+    }
+  }
+
+  /**
+   * Perform the actual token refresh
+   */
+  private async performTokenRefresh(connectionId: string): Promise<boolean> {
+    try {
+      const connection = await this.prismaService.platformConnection.findUnique({
+        where: { id: connectionId },
+      });
+
+      if (!connection || !connection.refreshToken) {
+        this.logger.warn('Cannot refresh token: connection not found or no refresh token', {
+          connectionId,
+          hasRefreshToken: !!connection?.refreshToken,
+        });
+        return false;
+      }
+
+      // Get the OAuth2 config for this platform
+      const { OAuth2ConfigService } = await import('./oauth2-config.service');
+      const configService = new OAuth2ConfigService(this.configService);
+      const config = await configService.getConfig(connection.platformType);
+
+      if (!config) {
+        this.logger.error('No OAuth2 config found for platform', {
+          connectionId,
+          platformType: connection.platformType,
+        });
+        return false;
+      }
+
+      // Attempt to refresh the token
+      try {
+        const tokenResponse = await this.refreshAccessToken(connectionId, config);
+        this.logger.log('Successfully refreshed access token', {
+          connectionId,
+          newExpiresAt: tokenResponse.expires_in 
+            ? new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString()
+            : 'no expiration',
+        });
+        return true;
+      } catch (refreshError) {
+        this.logger.error('Token refresh failed', {
+          connectionId,
+          error: refreshError.message,
+        });
+
+        // Mark connection as expired if refresh fails
+        await this.markConnectionAsExpired(connectionId, refreshError.message);
+        return false;
+      }
+    } catch (error) {
+      this.logger.error('Error during token validation and refresh', {
+        connectionId,
+        error: error.message,
+      });
+      return false;
     }
   }
 

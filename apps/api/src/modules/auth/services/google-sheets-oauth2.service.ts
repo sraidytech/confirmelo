@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { OAuth2Service, OAuth2Config } from './oauth2.service';
 import { OAuth2ConfigService } from './oauth2-config.service';
+import { SpreadsheetConnectionService } from './spreadsheet-connection.service';
 import axios, { AxiosInstance } from 'axios';
 import { PlatformType, ConnectionStatus } from '@prisma/client';
 
@@ -17,6 +18,7 @@ export interface GoogleUserInfo {
 
 export interface GoogleSpreadsheet {
   spreadsheetId: string;
+  id?: string; // Alias for spreadsheetId for compatibility
   properties: {
     title: string;
     locale: string;
@@ -54,6 +56,7 @@ export class GoogleSheetsOAuth2Service {
     private readonly prismaService: PrismaService,
     private readonly oauth2Service: OAuth2Service,
     private readonly oauth2ConfigService: OAuth2ConfigService,
+    private readonly spreadsheetConnectionService: SpreadsheetConnectionService,
   ) {
     // Initialize Google API client for general APIs (OAuth, Drive, etc.)
     this.googleApiClient = axios.create({
@@ -98,43 +101,12 @@ export class GoogleSheetsOAuth2Service {
 
       // Get Google OAuth2 configuration
       const config = await this.oauth2ConfigService.getConfig(PlatformType.GOOGLE_SHEETS);
-
       if (!config) {
         throw new BadRequestException('Google Sheets OAuth2 not configured');
       }
 
-      // Check for existing active connection
-      const existingConnection = await this.prismaService.platformConnection.findFirst({
-        where: {
-          userId,
-          organizationId,
-          platformType: PlatformType.GOOGLE_SHEETS,
-          status: ConnectionStatus.ACTIVE,
-        },
-      });
-
-      if (existingConnection) {
-        this.logger.warn('Active Google Sheets connection already exists, revoking it for re-authorization', {
-          userId,
-          organizationId,
-          existingConnectionId: existingConnection.id,
-          existingConnectionStatus: existingConnection.status,
-          lastSyncAt: existingConnection.lastSyncAt,
-        });
-
-        // Revoke the existing connection to allow fresh authorization
-        try {
-          await this.oauth2Service.revokeConnection(existingConnection.id);
-          this.logger.log('Successfully revoked existing connection for re-authorization', {
-            connectionId: existingConnection.id,
-          });
-        } catch (revokeError) {
-          this.logger.error('Failed to revoke existing connection, proceeding anyway', {
-            error: revokeError.message,
-            connectionId: existingConnection.id,
-          });
-        }
-      }
+      // Multi-account support: Allow multiple Google account connections
+      // No need to revoke existing connections - users can have multiple accounts
 
       // Generate authorization URL with PKCE
       const authRequest = await this.oauth2Service.generateAuthorizationUrl(
@@ -201,7 +173,7 @@ export class GoogleSheetsOAuth2Service {
       // Get user information using the access token
       const userInfo = await this.getGoogleUserInfo(tokenResponse.access_token);
 
-      // Store the connection with user information
+      // Store the connection with user information and account-specific naming
       const connectionId = await this.oauth2Service.storeConnection(
         userId,
         organizationId,
@@ -218,6 +190,7 @@ export class GoogleSheetsOAuth2Service {
           verified_email: userInfo.verified_email,
           api_version: 'v4',
           connected_at: new Date().toISOString(),
+          account_label: `${userInfo.name} (${userInfo.email})`,
         },
       );
 
@@ -297,7 +270,7 @@ export class GoogleSheetsOAuth2Service {
         details: {
           platform: 'Google Sheets',
           apiVersion: 'v4',
-          responseTime: Date.now(), // This would be calculated properly in real implementation
+          responseTime: Date.now(),
           user: {
             id: userInfo.id,
             email: userInfo.email,
@@ -351,7 +324,6 @@ export class GoogleSheetsOAuth2Service {
       });
 
       const userData = response.data;
-
       return {
         id: userData.id,
         email: userData.email,
@@ -394,7 +366,6 @@ export class GoogleSheetsOAuth2Service {
         error: error.message,
         status: error.response?.status,
       });
-
       return {
         accessible: false,
         error: error.message,
@@ -664,8 +635,6 @@ export class GoogleSheetsOAuth2Service {
 
   /**
    * List available spreadsheets for a connection
-   * Note: With drive.file scope, this only returns spreadsheets created by the app
-   * or explicitly opened by the user through the app
    */
   async listSpreadsheets(
     connectionId: string,
@@ -693,13 +662,7 @@ export class GoogleSheetsOAuth2Service {
       });
 
       const accessToken = await this.oauth2Service.getAccessToken(connectionId);
-      this.logger.log('Got access token for listing spreadsheets', {
-        connectionId,
-        tokenLength: accessToken?.length || 0,
-      });
 
-      // With drive.file scope, we can only see files created by the app
-      // Let's try a more specific query that works better with limited scope
       const params = new URLSearchParams({
         q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
         pageSize: pageSize.toString(),
@@ -711,27 +674,10 @@ export class GoogleSheetsOAuth2Service {
         params.append('pageToken', pageToken);
       }
 
-      this.logger.log('Making Drive API request with drive.file scope', {
-        url: `/drive/v3/files?${params.toString()}`,
-        connectionId,
-        scope: 'drive.file',
-      });
-
-      const response = await this.googleApiClient.get(
-        `/drive/v3/files?${params.toString()}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+      const response = await this.googleApiClient.get(`/drive/v3/files?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
         },
-      );
-
-      this.logger.log('Drive API response received', {
-        connectionId,
-        status: response.status,
-        filesCount: response.data.files?.length || 0,
-        hasNextPage: !!response.data.nextPageToken,
-        responseKeys: Object.keys(response.data || {}),
       });
 
       const files = response.data.files || [];
@@ -742,14 +688,6 @@ export class GoogleSheetsOAuth2Service {
         modifiedTime: file.modifiedTime,
         webViewLink: file.webViewLink,
       }));
-
-      this.logger.log('Successfully listed accessible spreadsheets', {
-        connectionId,
-        count: spreadsheets.length,
-        hasNextPage: !!response.data.nextPageToken,
-        spreadsheetNames: spreadsheets.map(s => s.name),
-        scope: 'drive.file',
-      });
 
       return {
         spreadsheets,
@@ -764,24 +702,16 @@ export class GoogleSheetsOAuth2Service {
         error: error.message,
         connectionId,
         status: error.response?.status,
-        statusText: error.response?.statusText,
-        responseData: error.response?.data,
-        url: error.config?.url,
       });
 
-      // Provide more specific error messages based on the error type
       if (error.response?.status === 403) {
         const errorMessage = error.response?.data?.error?.message || error.message;
         if (errorMessage.includes('insufficient') || errorMessage.includes('scope')) {
-          throw new Error(`Insufficient permissions to list spreadsheets. The current OAuth2 scopes may not include access to Google Drive files. Current scopes only allow access to files created by this application. Error: ${errorMessage}`);
+          throw new Error(`Insufficient permissions to list spreadsheets. Error: ${errorMessage}`);
         }
         throw new Error(`Access denied when listing spreadsheets: ${errorMessage}`);
       } else if (error.response?.status === 401) {
-        throw new Error(`Authentication failed when listing spreadsheets. The access token may be expired or invalid: ${error.message}`);
-      } else if (error.response?.status === 404) {
-        throw new Error(`Google Drive API endpoint not found: ${error.message}`);
-      } else if (error.response?.status >= 500) {
-        throw new Error(`Google Drive API server error: ${error.message}`);
+        throw new Error(`Authentication failed when listing spreadsheets: ${error.message}`);
       }
 
       throw new Error(`Failed to list spreadsheets: ${error.message}`);
@@ -790,7 +720,6 @@ export class GoogleSheetsOAuth2Service {
 
   /**
    * Add an existing spreadsheet to the accessible list
-   * This works with drive.file scope by requesting access to a specific spreadsheet
    */
   async addExistingSpreadsheet(
     connectionId: string,
@@ -808,15 +737,8 @@ export class GoogleSheetsOAuth2Service {
 
       const accessToken = await this.oauth2Service.getAccessToken(connectionId);
 
-      // Try to access the spreadsheet - this will request permission if needed
       try {
         const spreadsheet = await this.getSpreadsheet(accessToken, spreadsheetId);
-
-        this.logger.log('Successfully accessed existing spreadsheet', {
-          connectionId,
-          spreadsheetId,
-          title: spreadsheet.properties.title,
-        });
 
         return {
           success: true,
@@ -834,7 +756,7 @@ export class GoogleSheetsOAuth2Service {
         if (accessError.message.includes('403') || accessError.message.includes('404')) {
           return {
             success: false,
-            error: `Cannot access spreadsheet. Please ensure the spreadsheet is shared with your Google account or make it publicly accessible. The drive.file scope only allows access to files created by this app or explicitly shared with it.`,
+            error: `Cannot access spreadsheet. Please ensure the spreadsheet is shared with your Google account.`,
           };
         }
         throw accessError;
@@ -880,142 +802,6 @@ export class GoogleSheetsOAuth2Service {
   }
 
   /**
-   * Verify spreadsheet access
-   */
-  async verifySpreadsheetAccess(
-    accessToken: string,
-    spreadsheetId: string,
-  ): Promise<boolean> {
-    try {
-      // Try to get basic spreadsheet info first
-      const response = await this.sheetsApiClient.get(
-        `/v4/spreadsheets/${spreadsheetId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-          params: {
-            fields: 'spreadsheetId,properties.title',
-          },
-        },
-      );
-
-      return response.status === 200;
-    } catch (error) {
-      this.logger.warn('Spreadsheet access verification failed', {
-        spreadsheetId,
-        error: error.message,
-        status: error.response?.status,
-      });
-
-      // Try to get more information about why access failed
-      if (error.response?.status === 404) {
-        this.logger.warn('Spreadsheet not found - it may have been deleted or is not accessible', {
-          spreadsheetId,
-        });
-      } else if (error.response?.status === 403) {
-        this.logger.warn('Access denied to spreadsheet - check sharing permissions', {
-          spreadsheetId,
-        });
-      }
-
-      return false;
-    }
-  }
-
-  /**
-   * Get detailed spreadsheet information for debugging
-   */
-  async getSpreadsheetDebugInfo(
-    accessToken: string,
-    spreadsheetId: string,
-  ): Promise<any> {
-    try {
-      // Try Drive API first to see if file exists
-      const driveResponse = await this.googleApiClient.get(
-        `/drive/v3/files/${spreadsheetId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-          params: {
-            fields: 'id,name,mimeType,permissions,shared,owners',
-          },
-        },
-      );
-
-      this.logger.log('Drive API file info', {
-        spreadsheetId,
-        name: driveResponse.data.name,
-        mimeType: driveResponse.data.mimeType,
-        shared: driveResponse.data.shared,
-        hasPermissions: !!driveResponse.data.permissions,
-      });
-
-      return driveResponse.data;
-    } catch (error) {
-      this.logger.warn('Failed to get Drive API info', {
-        spreadsheetId,
-        error: error.message,
-        status: error.response?.status,
-      });
-      return null;
-    }
-  }
-
-  /**
-   * Create a new test spreadsheet
-   */
-  async createTestSpreadsheet(
-    connectionId: string,
-  ): Promise<{
-    spreadsheetId: string;
-    spreadsheetUrl: string;
-    title: string;
-  }> {
-    try {
-      const accessToken = await this.oauth2Service.getAccessToken(connectionId);
-
-      const title = `Confirmelo Test Spreadsheet - ${new Date().toISOString().split('T')[0]}`;
-
-      const spreadsheet = await this.createSpreadsheet(
-        accessToken,
-        title,
-        [
-          {
-            title: 'Orders',
-            rowCount: 1000,
-            columnCount: 10,
-          },
-          {
-            title: 'Products',
-            rowCount: 1000,
-            columnCount: 8,
-          },
-        ],
-      );
-
-      this.logger.log('Created test spreadsheet', {
-        connectionId,
-        spreadsheetId: spreadsheet.spreadsheetId,
-        title,
-      });
-
-      return {
-        spreadsheetId: spreadsheet.spreadsheetId,
-        spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheet.spreadsheetId}`,
-        title,
-      };
-    } catch (error) {
-      this.logger.error('Failed to create test spreadsheet', {
-        error: error.message,
-        connectionId,
-      });
-      throw new Error(`Failed to create test spreadsheet: ${error.message}`);
-    }
-  }
-
-  /**
    * Create a new Orders spreadsheet with predefined template
    */
   async createOrdersSpreadsheet(
@@ -1043,7 +829,7 @@ export class GoogleSheetsOAuth2Service {
 
       const accessToken = await this.oauth2Service.getAccessToken(connectionId);
 
-      // Create spreadsheet using the working createSpreadsheet method
+      // Create spreadsheet
       const spreadsheet = await this.createSpreadsheet(
         accessToken,
         name,
@@ -1064,7 +850,6 @@ export class GoogleSheetsOAuth2Service {
           spreadsheetId: spreadsheet.spreadsheetId,
           formatError: formatError.message,
         });
-        // Continue without formatting - the spreadsheet is still usable
       }
 
       const result = {
@@ -1078,12 +863,6 @@ export class GoogleSheetsOAuth2Service {
         })),
       };
 
-      this.logger.log('Successfully created Orders spreadsheet', {
-        connectionId,
-        spreadsheetId: spreadsheet.spreadsheetId,
-        name,
-      });
-
       return {
         success: true,
         spreadsheet: result,
@@ -1095,7 +874,6 @@ export class GoogleSheetsOAuth2Service {
         name,
       });
 
-      // Provide specific error messages based on error type
       if (error.message.includes('403')) {
         return {
           success: false,
@@ -1117,18 +895,29 @@ export class GoogleSheetsOAuth2Service {
     }
   }
 
-
-
   /**
    * Set up Orders sheet with headers and formatting
    */
   private async setupOrdersSheet(accessToken: string, spreadsheetId: string): Promise<void> {
-    const headers = this.getOrdersSheetHeaders();
+    const headers = [
+      'Order ID',
+      'Date',
+      'Name',
+      'Phone',
+      'Address',
+      'City',
+      'Product',
+      'Product SKU',
+      'Product Qty',
+      'Product Variant',
+      'Price',
+      'Page URL',
+    ];
 
     // Get the spreadsheet to find the correct sheet ID
     const spreadsheet = await this.getSpreadsheet(accessToken, spreadsheetId);
     const ordersSheet = spreadsheet.sheets.find(sheet => sheet.properties.title === 'Orders');
-    
+
     if (!ordersSheet) {
       throw new Error('Orders sheet not found in created spreadsheet');
     }
@@ -1146,11 +935,10 @@ export class GoogleSheetsOAuth2Service {
 
     // Format the header row
     const formatRequests = [
-      // Format header row (bold, background color, text color)
       {
         repeatCell: {
           range: {
-            sheetId: sheetId, // Use the actual sheet ID
+            sheetId: sheetId,
             startRowIndex: 0,
             endRowIndex: 1,
             startColumnIndex: 0,
@@ -1176,93 +964,10 @@ export class GoogleSheetsOAuth2Service {
           fields: 'userEnteredFormat(backgroundColor,textFormat)',
         },
       },
-      // Format Date column (column B)
-      {
-        repeatCell: {
-          range: {
-            sheetId: sheetId,
-            startRowIndex: 1,
-            endRowIndex: 1000,
-            startColumnIndex: 1,
-            endColumnIndex: 2,
-          },
-          cell: {
-            userEnteredFormat: {
-              numberFormat: {
-                type: 'DATE',
-                pattern: 'yyyy-mm-dd',
-              },
-            },
-          },
-          fields: 'userEnteredFormat.numberFormat',
-        },
-      },
-      // Format Price column (column K)
-      {
-        repeatCell: {
-          range: {
-            sheetId: sheetId,
-            startRowIndex: 1,
-            endRowIndex: 1000,
-            startColumnIndex: 10,
-            endColumnIndex: 11,
-          },
-          cell: {
-            userEnteredFormat: {
-              numberFormat: {
-                type: 'CURRENCY',
-                pattern: '$#,##0.00',
-              },
-            },
-          },
-          fields: 'userEnteredFormat.numberFormat',
-        },
-      },
-      // Format Product Qty column (column I)
-      {
-        repeatCell: {
-          range: {
-            sheetId: sheetId,
-            startRowIndex: 1,
-            endRowIndex: 1000,
-            startColumnIndex: 8,
-            endColumnIndex: 9,
-          },
-          cell: {
-            userEnteredFormat: {
-              numberFormat: {
-                type: 'NUMBER',
-                pattern: '#,##0',
-              },
-            },
-          },
-          fields: 'userEnteredFormat.numberFormat',
-        },
-      },
     ];
 
     // Apply formatting
     await this.batchUpdateSpreadsheet(accessToken, spreadsheetId, formatRequests);
-  }
-
-  /**
-   * Get Orders sheet headers
-   */
-  private getOrdersSheetHeaders(): string[] {
-    return [
-      'Order ID',
-      'Date',
-      'Name',
-      'Phone',
-      'Address',
-      'City',
-      'Product',
-      'Product SKU',
-      'Product Qty',
-      'Product Variant',
-      'Price',
-      'Page URL',
-    ];
   }
 
   /**
@@ -1276,61 +981,52 @@ export class GoogleSheetsOAuth2Service {
     connection: any;
   }> {
     try {
+      this.logger.log('Connecting to spreadsheet using new SpreadsheetConnectionService', {
+        connectionId,
+        spreadsheetId,
+      });
+
       // Get access token for the connection
       const accessToken = await this.oauth2Service.getAccessToken(connectionId);
 
-      // Verify spreadsheet access first
-      const hasAccess = await this.verifySpreadsheetAccess(accessToken, spreadsheetId);
-      if (!hasAccess) {
-        // Get debug info to understand why access failed
-        const debugInfo = await this.getSpreadsheetDebugInfo(accessToken, spreadsheetId);
-
-        if (debugInfo) {
-          throw new Error(`Spreadsheet "${debugInfo.name}" exists but is not accessible via Sheets API. This usually means the spreadsheet is not shared with your account or has restricted permissions. Please share the spreadsheet with your Google account or create a new test spreadsheet.`);
-        } else {
-          throw new Error('Spreadsheet not found or not accessible. It may have been deleted or you may not have permission to access it. Please try creating a new test spreadsheet.');
-        }
-      }
-
-      // Get the spreadsheet details
+      // Get the spreadsheet details from Google API
       const spreadsheet = await this.getSpreadsheet(accessToken, spreadsheetId);
 
-      // Get existing platform data
-      const existingConnection = await this.prismaService.platformConnection.findUnique({
-        where: { id: connectionId },
-        select: { platformData: true },
-      });
+      // Transform sheets data for the SpreadsheetConnectionService
+      const sheetsData = spreadsheet.sheets.map(sheet => ({
+        id: sheet.properties.sheetId,
+        name: sheet.properties.title,
+        index: sheet.properties.index,
+        rowCount: sheet.properties.gridProperties.rowCount,
+        columnCount: sheet.properties.gridProperties.columnCount,
+      }));
 
-      const existingPlatformData = existingConnection?.platformData as any || {};
-
-      // Update the connection with spreadsheet information
-      const connection = await this.prismaService.platformConnection.update({
-        where: { id: connectionId },
-        data: {
-          platformData: {
-            ...existingPlatformData,
-            connected_spreadsheet: {
-              id: spreadsheetId,
-              name: spreadsheet.properties.title,
-              connected_at: new Date().toISOString(),
-              sheets: spreadsheet.sheets.map(sheet => ({
-                id: sheet.properties.sheetId,
-                name: sheet.properties.title,
-                index: sheet.properties.index,
-                rowCount: sheet.properties.gridProperties.rowCount,
-                columnCount: sheet.properties.gridProperties.columnCount,
-              })),
-            },
-          },
-          lastSyncAt: new Date(),
+      // Use SpreadsheetConnectionService to create the connection
+      const spreadsheetConnection = await this.spreadsheetConnectionService.connectSpreadsheet({
+        connectionId,
+        spreadsheetId,
+        spreadsheetName: spreadsheet.properties.title,
+        webViewLink: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
+        sheets: sheetsData,
+        permissions: {
+          canEdit: true,
+          canShare: false,
+          canComment: true,
+          role: 'editor',
         },
       });
 
-      this.logger.log('Connected to spreadsheet', {
+      // Get the updated platform connection
+      const connection = await this.prismaService.platformConnection.findUnique({
+        where: { id: connectionId },
+      });
+
+      this.logger.log('Successfully connected to spreadsheet', {
         connectionId,
         spreadsheetId,
         spreadsheetName: spreadsheet.properties.title,
         sheetsCount: spreadsheet.sheets.length,
+        spreadsheetConnectionId: spreadsheetConnection.id,
       });
 
       return {
@@ -1344,11 +1040,10 @@ export class GoogleSheetsOAuth2Service {
         spreadsheetId,
       });
 
-      // Provide more specific error messages
       if (error.message.includes('404')) {
-        throw new Error(`Spreadsheet not found or not accessible. Please ensure the spreadsheet exists and you have permission to access it.`);
+        throw new Error(`Spreadsheet not found or not accessible.`);
       } else if (error.message.includes('403')) {
-        throw new Error(`Access denied to spreadsheet. Please check your permissions and ensure the spreadsheet is shared with your Google account.`);
+        throw new Error(`Access denied to spreadsheet.`);
       } else if (error.message.includes('401')) {
         throw new Error(`Authentication failed. Please refresh your Google Sheets connection.`);
       }
@@ -1358,102 +1053,199 @@ export class GoogleSheetsOAuth2Service {
   }
 
   /**
-   * Get connected spreadsheet information
+   * Get connected spreadsheets (multi-spreadsheet support)
    */
-  async getConnectedSpreadsheet(connectionId: string): Promise<{
-    spreadsheet?: any;
-    sheets?: any[];
+  async getConnectedSpreadsheets(connectionId: string, page?: number, limit?: number): Promise<{
+    spreadsheets: any[];
+    total: number;
+    hasMore: boolean;
+    page: number;
+    limit: number;
   }> {
     try {
-      const connection = await this.prismaService.platformConnection.findUnique({
-        where: { id: connectionId },
-        select: { platformData: true },
+      this.logger.log('Getting connected spreadsheets from SpreadsheetConnection table', {
+        connectionId,
+        page,
+        limit,
       });
 
-      const platformData = connection?.platformData as any;
-      if (!platformData?.connected_spreadsheet) {
-        return {};
-      }
+      // Use the new SpreadsheetConnectionService to get connected spreadsheets
+      const result = await this.spreadsheetConnectionService.listConnectedSpreadsheets(
+        connectionId,
+        false, // includeInactive
+        page || 1,
+        limit || 50,
+      );
 
-      const connectedSpreadsheet = platformData.connected_spreadsheet;
+      // Transform the data to match the expected format
+      const transformedSpreadsheets = result.spreadsheets.map(spreadsheet => ({
+        id: spreadsheet.spreadsheetId,
+        name: spreadsheet.spreadsheetName,
+        connected_at: spreadsheet.connectedAt?.toISOString(),
+        webViewLink: spreadsheet.webViewLink,
+        sheets: spreadsheet.sheetsData || [],
+        permissions: spreadsheet.permissions,
+        lastSyncAt: spreadsheet.lastSyncAt?.toISOString(),
+        syncCount: spreadsheet.syncCount,
+        hasError: !!spreadsheet.lastErrorAt,
+        lastError: spreadsheet.lastErrorMessage,
+      }));
 
-      // Refresh spreadsheet data to get latest information
-      try {
-        const accessToken = await this.oauth2Service.getAccessToken(connectionId);
-        const freshSpreadsheet = await this.getSpreadsheet(
-          accessToken,
-          connectedSpreadsheet.id,
-        );
+      this.logger.log('Successfully retrieved connected spreadsheets', {
+        connectionId,
+        total: result.total,
+        returned: transformedSpreadsheets.length,
+        hasMore: result.hasMore,
+      });
 
-        return {
-          spreadsheet: {
-            id: connectedSpreadsheet.id,
-            name: freshSpreadsheet.properties.title,
-            connected_at: connectedSpreadsheet.connected_at,
-            webViewLink: `https://docs.google.com/spreadsheets/d/${connectedSpreadsheet.id}`,
-          },
-          sheets: freshSpreadsheet.sheets.map(sheet => ({
-            id: sheet.properties.sheetId,
-            name: sheet.properties.title,
-            index: sheet.properties.index,
-            rowCount: sheet.properties.gridProperties.rowCount,
-            columnCount: sheet.properties.gridProperties.columnCount,
-          })),
-        };
-      } catch (error) {
-        // If we can't refresh, return cached data
-        return {
-          spreadsheet: {
-            id: connectedSpreadsheet.id,
-            name: connectedSpreadsheet.name,
-            connected_at: connectedSpreadsheet.connected_at,
-            webViewLink: `https://docs.google.com/spreadsheets/d/${connectedSpreadsheet.id}`,
-          },
-          sheets: connectedSpreadsheet.sheets || [],
-        };
-      }
+      return {
+        spreadsheets: transformedSpreadsheets,
+        total: result.total,
+        hasMore: result.hasMore,
+        page: result.page,
+        limit: result.limit,
+      };
     } catch (error) {
-      this.logger.error('Failed to get connected spreadsheet', {
+      this.logger.error('Failed to get connected spreadsheets', {
         error: error.message,
         connectionId,
       });
-      throw new Error(`Failed to get connected spreadsheet: ${error.message}`);
+      throw new Error(`Failed to get connected spreadsheets: ${error.message}`);
     }
   }
 
   /**
-   * Disconnect from current spreadsheet
+   * Disconnect from spreadsheet
    */
-  async disconnectFromSpreadsheet(connectionId: string): Promise<void> {
+  async disconnectFromSpreadsheet(connectionId: string, spreadsheetId?: string): Promise<void> {
     try {
-      const connection = await this.prismaService.platformConnection.findUnique({
-        where: { id: connectionId },
-        select: { platformData: true },
+      this.logger.log('Disconnecting from spreadsheet using SpreadsheetConnectionService', {
+        connectionId,
+        spreadsheetId,
       });
 
-      if (!connection?.platformData) {
-        return;
+      if (spreadsheetId) {
+        // Disconnect from specific spreadsheet using the new service
+        await this.spreadsheetConnectionService.disconnectSpreadsheet(connectionId, spreadsheetId);
+        
+        this.logger.log('Successfully disconnected from specific spreadsheet', {
+          connectionId,
+          spreadsheetId,
+        });
+      } else {
+        // Disconnect from all spreadsheets for this connection
+        const connectedSpreadsheets = await this.spreadsheetConnectionService.listConnectedSpreadsheets(
+          connectionId,
+          false, // includeInactive
+          1,
+          100, // Get all active spreadsheets
+        );
+
+        // Disconnect from each spreadsheet
+        const disconnectPromises = connectedSpreadsheets.spreadsheets.map(spreadsheet =>
+          this.spreadsheetConnectionService.disconnectSpreadsheet(connectionId, spreadsheet.spreadsheetId)
+        );
+
+        await Promise.all(disconnectPromises);
+
+        this.logger.log('Successfully disconnected from all spreadsheets', {
+          connectionId,
+          disconnectedCount: connectedSpreadsheets.spreadsheets.length,
+        });
       }
-
-      const platformData = connection.platformData as any;
-      const updatedPlatformData = { ...platformData };
-      delete updatedPlatformData.connected_spreadsheet;
-
-      await this.prismaService.platformConnection.update({
-        where: { id: connectionId },
-        data: {
-          platformData: updatedPlatformData,
-          lastSyncAt: new Date(),
-        },
-      });
-
-      this.logger.log('Disconnected from spreadsheet', { connectionId });
     } catch (error) {
       this.logger.error('Failed to disconnect from spreadsheet', {
         error: error.message,
         connectionId,
+        spreadsheetId,
       });
       throw new Error(`Failed to disconnect from spreadsheet: ${error.message}`);
+    }
+  }
+
+  /**
+   * List connected Google accounts for multi-account support
+   */
+  async listConnectedGoogleAccounts(userId: string, organizationId: string): Promise<any[]> {
+    try {
+      const connections = await this.prismaService.platformConnection.findMany({
+        where: {
+          userId,
+          organizationId,
+          platformType: PlatformType.GOOGLE_SHEETS,
+          status: ConnectionStatus.ACTIVE,
+        },
+        select: {
+          id: true,
+          platformName: true,
+          platformData: true,
+          createdAt: true,
+          lastSyncAt: true,
+          status: true,
+        },
+      });
+
+      return connections.map(connection => {
+        const platformData = connection.platformData as any;
+        return {
+          connectionId: connection.id,
+          email: platformData?.google_email || 'Unknown',
+          name: platformData?.google_name || 'Unknown',
+          picture: platformData?.google_picture,
+          platformName: connection.platformName,
+          status: connection.status,
+          createdAt: connection.createdAt,
+          lastSyncAt: connection.lastSyncAt,
+          connectedSpreadsheets: platformData?.connected_spreadsheets?.length ||
+            (platformData?.connected_spreadsheet ? 1 : 0),
+        };
+      });
+    } catch (error) {
+      this.logger.error('Failed to list connected Google accounts', {
+        error: error.message,
+        userId,
+        organizationId,
+      });
+      throw new Error(`Failed to list connected Google accounts: ${error.message}`);
+    }
+  }
+
+  /**
+   * Switch to specific Google account
+   */
+  async switchToGoogleAccount(userId: string, organizationId: string, googleEmail: string): Promise<string> {
+    try {
+      const connection = await this.prismaService.platformConnection.findFirst({
+        where: {
+          userId,
+          organizationId,
+          platformType: PlatformType.GOOGLE_SHEETS,
+          status: ConnectionStatus.ACTIVE,
+        },
+        select: {
+          id: true,
+          platformData: true,
+        },
+      });
+
+      if (!connection) {
+        throw new Error('No active Google Sheets connection found');
+      }
+
+      const platformData = connection.platformData as any;
+      if (platformData?.google_email !== googleEmail) {
+        throw new Error('Google account not found in connections');
+      }
+
+      return connection.id;
+    } catch (error) {
+      this.logger.error('Failed to switch to Google account', {
+        error: error.message,
+        userId,
+        organizationId,
+        googleEmail,
+      });
+      throw new Error(`Failed to switch to Google account: ${error.message}`);
     }
   }
 
@@ -1465,7 +1257,6 @@ export class GoogleSheetsOAuth2Service {
       this.logger.log('Refreshing Google token', { connectionId });
 
       const config = await this.oauth2ConfigService.getConfig(PlatformType.GOOGLE_SHEETS);
-
       if (!config) {
         throw new Error('Google Sheets OAuth2 configuration not found');
       }
@@ -1482,8 +1273,6 @@ export class GoogleSheetsOAuth2Service {
     }
   }
 
-
-
   /**
    * Test current OAuth2 scopes and permissions
    */
@@ -1492,6 +1281,8 @@ export class GoogleSheetsOAuth2Service {
     driveAccess: boolean;
     sheetsAccess: boolean;
     userInfoAccess: boolean;
+    availableScopes: string[];
+    missingScopes: string[];
     details: any;
   }> {
     try {
@@ -1502,6 +1293,8 @@ export class GoogleSheetsOAuth2Service {
         driveAccess: false,
         sheetsAccess: false,
         userInfoAccess: false,
+        availableScopes: [],
+        missingScopes: [],
         details: {} as any,
       };
 
@@ -1512,8 +1305,12 @@ export class GoogleSheetsOAuth2Service {
         });
         results.userInfoAccess = true;
         results.details.userInfo = userResponse.data;
+        results.availableScopes.push('https://www.googleapis.com/auth/userinfo.profile');
+        results.availableScopes.push('https://www.googleapis.com/auth/userinfo.email');
       } catch (error) {
         results.details.userInfoError = error.response?.data || error.message;
+        results.missingScopes.push('https://www.googleapis.com/auth/userinfo.profile');
+        results.missingScopes.push('https://www.googleapis.com/auth/userinfo.email');
       }
 
       // Test Drive access
@@ -1524,8 +1321,10 @@ export class GoogleSheetsOAuth2Service {
         });
         results.driveAccess = true;
         results.details.driveInfo = driveResponse.data;
+        results.availableScopes.push('https://www.googleapis.com/auth/drive.file');
       } catch (error) {
         results.details.driveError = error.response?.data || error.message;
+        results.missingScopes.push('https://www.googleapis.com/auth/drive.file');
       }
 
       // Test token info to get actual scopes
@@ -1547,6 +1346,7 @@ export class GoogleSheetsOAuth2Service {
         });
         results.sheetsAccess = true;
         results.details.sheetsTest = { created: testResponse.data.spreadsheetId };
+        results.availableScopes.push('https://www.googleapis.com/auth/spreadsheets');
 
         // Clean up the test spreadsheet
         try {
@@ -1558,6 +1358,7 @@ export class GoogleSheetsOAuth2Service {
         }
       } catch (error) {
         results.details.sheetsError = error.response?.data || error.message;
+        results.missingScopes.push('https://www.googleapis.com/auth/spreadsheets');
       }
 
       this.logger.log('Scope test completed', {
@@ -1581,7 +1382,7 @@ export class GoogleSheetsOAuth2Service {
   private setupGoogleApiInterceptors(): void {
     // Setup interceptors for general Google API client
     this.setupInterceptorsForClient(this.googleApiClient, 'Google API');
-    
+
     // Setup interceptors for Sheets API client
     this.setupInterceptorsForClient(this.sheetsApiClient, 'Sheets API');
   }

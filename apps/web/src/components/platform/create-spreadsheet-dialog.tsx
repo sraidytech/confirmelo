@@ -72,21 +72,21 @@ export function CreateSpreadsheetDialog({
         }
       );
 
-      if (response.data.success) {
-        toast({
-          title: 'Spreadsheet Created',
-          description: `Successfully created "${response.data.spreadsheet.name}".`,
-        });
-        
-        onSpreadsheetCreated(response.data.spreadsheet);
-        handleClose();
-      } else {
-        toast({
-          title: 'Creation Failed',
-          description: response.data.error || 'Could not create the spreadsheet.',
-          variant: 'destructive',
-        });
-      }
+      // The API returns { spreadsheetId, spreadsheetUrl, title } directly
+      const createdSpreadsheet = {
+        id: response.data.spreadsheetId,
+        name: response.data.title,
+        webViewLink: response.data.spreadsheetUrl,
+        sheets: [{ id: 0, name: 'Orders', index: 0 }], // Default Orders sheet
+      };
+
+      toast({
+        title: 'Spreadsheet Created',
+        description: `Successfully created "${response.data.title || 'spreadsheet'}".`,
+      });
+      
+      onSpreadsheetCreated(createdSpreadsheet);
+      handleClose();
     } catch (error: any) {
       console.error('Failed to create spreadsheet:', error);
       

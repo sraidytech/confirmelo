@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
-import { PlatformConnection, ConnectionStatus, PlatformType, ConnectionTestResult } from '@/types/auth';
+import { PlatformConnection, ConnectionStatus, ConnectionTestResult } from '@/types/auth';
 import { 
   RefreshCw, 
   TestTube, 
@@ -18,7 +18,6 @@ import {
   AlertTriangle, 
   Clock,
   ExternalLink,
-  Settings,
   FileSpreadsheet,
   Plus,
   Unlink
@@ -35,8 +34,13 @@ interface GoogleSheetsConnectionCardProps {
 interface ConnectedSpreadsheet {
   id: string;
   name: string;
-  connected_at: string;
+  connectedAt?: string; // Make optional since it might be null/undefined
   webViewLink: string;
+  sheets: SpreadsheetSheet[];
+  hasError?: boolean;
+  lastError?: string;
+  syncCount?: number;
+  lastSyncAt?: string;
 }
 
 interface SpreadsheetSheet {
@@ -59,23 +63,22 @@ export function GoogleSheetsConnectionCard({
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [showSpreadsheetSelector, setShowSpreadsheetSelector] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
-  const [connectedSpreadsheet, setConnectedSpreadsheet] = useState<ConnectedSpreadsheet | null>(null);
-  const [spreadsheetSheets, setSpreadsheetSheets] = useState<SpreadsheetSheet[]>([]);
+  const [connectedSpreadsheets, setConnectedSpreadsheets] = useState<ConnectedSpreadsheet[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
-    loadConnectedSpreadsheet();
+    loadConnectedSpreadsheets();
   }, [connection.id]);
 
-  const loadConnectedSpreadsheet = async () => {
+  const loadConnectedSpreadsheets = async () => {
     try {
-      const response = await api.get(`/auth/oauth2/google-sheets/connections/${connection.id}/connected-spreadsheet`);
-      setConnectedSpreadsheet(response.data.spreadsheet || null);
-      setSpreadsheetSheets(response.data.sheets || []);
+      const response = await api.get(`/auth/oauth2/google-sheets/connections/${connection.id}/connected-spreadsheets`);
+      setConnectedSpreadsheets(response.data.spreadsheets || []);
+      
+
     } catch (error) {
-      // Ignore error if no spreadsheet is connected
-      setConnectedSpreadsheet(null);
-      setSpreadsheetSheets([]);
+      // Ignore error if no spreadsheets are connected
+      setConnectedSpreadsheets([]);
     }
   };
 
@@ -193,16 +196,16 @@ export function GoogleSheetsConnectionCard({
   const handleConnectSpreadsheet = async (spreadsheetId: string) => {
     setIsLoadingSpreadsheet(true);
     try {
-      await api.post(`/auth/oauth2/google-sheets/connections/${connection.id}/connect-spreadsheet`, {
+      const result = await api.post(`/auth/oauth2/google-sheets/connections/${connection.id}/connect-spreadsheet`, {
         spreadsheetId,
       });
       
       toast({
         title: 'Spreadsheet Connected',
-        description: 'Successfully connected to the selected spreadsheet.',
+        description: `Successfully connected to "${result.data.spreadsheet?.properties?.title || 'spreadsheet'}".`,
       });
       
-      await loadConnectedSpreadsheet();
+      await loadConnectedSpreadsheets();
       setShowSpreadsheetSelector(false);
       onConnectionUpdated();
     } catch (error: any) {
@@ -216,22 +219,23 @@ export function GoogleSheetsConnectionCard({
     }
   };
 
-  const handleDisconnectSpreadsheet = async () => {
+  const handleDisconnectSpreadsheet = async (spreadsheetId: string) => {
     if (!confirm('Are you sure you want to disconnect from this spreadsheet?')) {
       return;
     }
 
     setIsDisconnecting(true);
     try {
-      await api.delete(`/auth/oauth2/google-sheets/connections/${connection.id}/connected-spreadsheet`);
+      // Use the new multi-spreadsheet disconnect endpoint
+      await api.delete(`/auth/oauth2/google-sheets/connections/${connection.id}/spreadsheets/${spreadsheetId}/disconnect`);
       
       toast({
         title: 'Spreadsheet Disconnected',
         description: 'Successfully disconnected from the spreadsheet.',
       });
       
-      setConnectedSpreadsheet(null);
-      setSpreadsheetSheets([]);
+      // Reload the connected spreadsheets
+      await loadConnectedSpreadsheets();
       onConnectionUpdated();
     } catch (error: any) {
       toast({
@@ -244,38 +248,14 @@ export function GoogleSheetsConnectionCard({
     }
   };
 
-  const handleCreateTestSpreadsheet = async () => {
-    setIsLoadingSpreadsheet(true);
-    try {
-      const response = await api.post(`/auth/oauth2/google-sheets/connections/${connection.id}/create-test-spreadsheet`);
-      
-      toast({
-        title: 'Test Spreadsheet Created',
-        description: `Successfully created and connected to "${response.data.title}".`,
-      });
-      
-      await loadConnectedSpreadsheet();
-      onConnectionUpdated();
-      
-      // Open the spreadsheet in a new tab
-      if (response.data.spreadsheetUrl) {
-        window.open(response.data.spreadsheetUrl, '_blank');
-      }
-    } catch (error: any) {
-      toast({
-        title: 'Creation Failed',
-        description: error.message || 'Failed to create test spreadsheet.',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoadingSpreadsheet(false);
-    }
-  };
 
-  const isTokenExpired = connection.tokenExpiresAt && new Date(connection.tokenExpiresAt) < new Date();
+
+  const isTokenExpired = connection.tokenExpiresAt && 
+    !isNaN(new Date(connection.tokenExpiresAt).getTime()) && 
+    new Date(connection.tokenExpiresAt) < new Date();
   const canRefresh = connection.status === ConnectionStatus.ACTIVE || connection.status === ConnectionStatus.EXPIRED;
   const canTest = connection.status === ConnectionStatus.ACTIVE;
-  const canConnectSpreadsheet = connection.status === ConnectionStatus.ACTIVE && !connectedSpreadsheet;
+  const canConnectSpreadsheet = connection.status === ConnectionStatus.ACTIVE;
 
   return (
     <>
@@ -371,90 +351,107 @@ export function GoogleSheetsConnectionCard({
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {/* Connected Spreadsheet Section */}
+          {/* Connected Spreadsheets Section */}
           <div className="border rounded-lg p-4 bg-gray-50">
             <div className="flex items-center justify-between mb-3">
               <h4 className="font-medium text-gray-900 flex items-center space-x-2">
                 <FileSpreadsheet className="h-4 w-4" />
-                <span>Connected Spreadsheet</span>
+                <span>Connected Spreadsheets ({connectedSpreadsheets.length})</span>
               </h4>
               
-              {connectedSpreadsheet ? (
+              {canConnectSpreadsheet && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleDisconnectSpreadsheet}
-                  disabled={isDisconnecting}
-                  className="text-red-600 hover:text-red-700"
+                  onClick={() => setShowSpreadsheetSelector(true)}
+                  disabled={isLoadingSpreadsheet}
                 >
-                  {isDisconnecting ? (
+                  {isLoadingSpreadsheet ? (
                     <LoadingSpinner className="h-4 w-4" />
                   ) : (
                     <>
-                      <Unlink className="h-4 w-4 mr-1" />
-                      Disconnect
+                      <Plus className="h-4 w-4 mr-1" />
+                      Connect
                     </>
                   )}
                 </Button>
-              ) : canConnectSpreadsheet ? (
-                <div className="flex space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowSpreadsheetSelector(true)}
-                    disabled={isLoadingSpreadsheet}
-                  >
-                    {isLoadingSpreadsheet ? (
-                      <LoadingSpinner className="h-4 w-4" />
-                    ) : (
-                      <>
-                        <Plus className="h-4 w-4 mr-1" />
-                        Connect
-                      </>
-                    )}
-                  </Button>
-
-                </div>
-              ) : null}
+              )}
             </div>
 
-            {connectedSpreadsheet ? (
+            {connectedSpreadsheets.length > 0 ? (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-gray-900">{connectedSpreadsheet.name}</p>
-                    <p className="text-sm text-gray-600">
-                      Connected {formatDistanceToNow(new Date(connectedSpreadsheet.connected_at), { addSuffix: true })}
-                    </p>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => window.open(connectedSpreadsheet.webViewLink, '_blank')}
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                {spreadsheetSheets.length > 0 && (
-                  <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">
-                      Sheets ({spreadsheetSheets.length}):
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {spreadsheetSheets.map((sheet) => (
-                        <Badge key={sheet.id} variant="secondary" className="text-xs">
-                          {sheet.name} ({sheet.rowCount}×{sheet.columnCount})
-                        </Badge>
-                      ))}
+                {connectedSpreadsheets.map((spreadsheet) => (
+                  <div key={spreadsheet.id} className="border rounded-lg p-3 bg-white">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <p className="font-medium text-gray-900">{spreadsheet.name}</p>
+                          {spreadsheet.hasError && (
+                            <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
+                              Error
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          Connected {spreadsheet.connectedAt && !isNaN(new Date(spreadsheet.connectedAt).getTime()) 
+                            ? formatDistanceToNow(new Date(spreadsheet.connectedAt), { addSuffix: true })
+                            : 'recently'
+                          }
+                          {spreadsheet.syncCount && spreadsheet.syncCount > 0 && (
+                            <span className="ml-2">• {spreadsheet.syncCount} syncs</span>
+                          )}
+                        </p>
+                        {spreadsheet.hasError && spreadsheet.lastError && (
+                          <p className="text-xs text-red-600 mt-1">{spreadsheet.lastError}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => window.open(spreadsheet.webViewLink, '_blank')}
+                          title="Open in Google Sheets"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDisconnectSpreadsheet(spreadsheet.id)}
+                          disabled={isDisconnecting}
+                          className="text-red-600 hover:text-red-700"
+                          title="Disconnect"
+                        >
+                          {isDisconnecting ? (
+                            <LoadingSpinner className="h-4 w-4" />
+                          ) : (
+                            <Unlink className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
                     </div>
+
+                    {spreadsheet.sheets && spreadsheet.sheets.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-sm font-medium text-gray-700 mb-2">
+                          Sheets ({spreadsheet.sheets.length}):
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {spreadsheet.sheets.map((sheet) => (
+                            <Badge key={sheet.id} variant="secondary" className="text-xs">
+                              {sheet.name} ({sheet.rowCount}×{sheet.columnCount})
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                )}
+                ))}
               </div>
             ) : (
               <div className="text-center py-4">
                 <FileSpreadsheet className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600">No spreadsheet connected</p>
+                <p className="text-sm text-gray-600">No spreadsheets connected</p>
                 {canConnectSpreadsheet && (
                   <p className="text-xs text-gray-500 mt-1">
                     Click &quot;Connect&quot; to select a spreadsheet
@@ -480,7 +477,10 @@ export function GoogleSheetsConnectionCard({
             <div>
               <span className="font-medium text-gray-600">Created:</span>
               <p className="text-gray-800">
-                {formatDistanceToNow(new Date(connection.createdAt), { addSuffix: true })}
+                {connection.createdAt && !isNaN(new Date(connection.createdAt).getTime())
+                  ? formatDistanceToNow(new Date(connection.createdAt), { addSuffix: true })
+                  : 'Unknown'
+                }
               </p>
             </div>
 
@@ -488,7 +488,10 @@ export function GoogleSheetsConnectionCard({
               <div>
                 <span className="font-medium text-gray-600">Last Sync:</span>
                 <p className="text-gray-800">
-                  {formatDistanceToNow(new Date(connection.lastSyncAt), { addSuffix: true })}
+                  {connection.lastSyncAt && !isNaN(new Date(connection.lastSyncAt).getTime())
+                    ? formatDistanceToNow(new Date(connection.lastSyncAt), { addSuffix: true })
+                    : 'Never'
+                  }
                 </p>
               </div>
             )}
@@ -504,7 +507,10 @@ export function GoogleSheetsConnectionCard({
               <div>
                 <span className="font-medium text-gray-600">Token Expires:</span>
                 <p className={`${isTokenExpired ? 'text-red-600' : 'text-gray-800'}`}>
-                  {formatDistanceToNow(new Date(connection.tokenExpiresAt), { addSuffix: true })}
+                  {connection.tokenExpiresAt && !isNaN(new Date(connection.tokenExpiresAt).getTime())
+                    ? formatDistanceToNow(new Date(connection.tokenExpiresAt), { addSuffix: true })
+                    : 'Unknown'
+                  }
                   {isTokenExpired && ' (Expired)'}
                 </p>
               </div>
@@ -549,7 +555,10 @@ export function GoogleSheetsConnectionCard({
               )}
               
               <p className="text-xs text-gray-500 mt-2">
-                Tested {formatDistanceToNow(new Date(testResult.testedAt), { addSuffix: true })}
+                Tested {testResult.testedAt && !isNaN(new Date(testResult.testedAt).getTime())
+                  ? formatDistanceToNow(new Date(testResult.testedAt), { addSuffix: true })
+                  : 'recently'
+                }
               </p>
             </div>
           )}

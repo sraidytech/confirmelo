@@ -18,7 +18,7 @@ export const ROLE_ROUTES: Record<string, UserRole[]> = {
   ],
   '/admin': [UserRole.SUPER_ADMIN, UserRole.ADMIN],
   '/teams': [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER],
-  '/orders': [
+  '/dashboard/orders': [
     UserRole.SUPER_ADMIN,
     UserRole.ADMIN,
     UserRole.TEAM_LEADER,
@@ -97,9 +97,9 @@ export function getDefaultRedirectUrl(userRole: UserRole): string {
     case UserRole.TEAM_LEADER:
       return '/dashboard';
     case UserRole.CALL_CENTER_AGENT:
-      return '/orders';
+      return '/dashboard/orders';
     case UserRole.FOLLOWUP_AGENT:
-      return '/orders';
+      return '/dashboard/orders';
     case UserRole.CLIENT_ADMIN:
       return '/analytics';
     case UserRole.CLIENT_USER:
@@ -262,7 +262,7 @@ export function getNavigationItems(userRole: UserRole) {
     },
     {
       name: 'Orders',
-      href: '/orders',
+      href: '/dashboard/orders',
       permission: 'orders:read',
       roles: [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CALL_CENTER_AGENT, UserRole.FOLLOWUP_AGENT],
     },

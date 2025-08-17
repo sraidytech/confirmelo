@@ -460,6 +460,131 @@ class ApiClient {
     }
   }
 
+  // Order Sync endpoints
+  async createOrderSheet(connectionId: string, data: { name: string; config?: { includeHeaders?: boolean; enableSync?: boolean } }) {
+    try {
+      const response = await this.client.post(`/auth/oauth2/google-sheets/connections/${connectionId}/create-order-sheet`, data);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getOrderSheets(connectionId: string) {
+    try {
+      const response = await this.client.get(`/auth/oauth2/google-sheets/connections/${connectionId}/order-sheets`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getConnectedSpreadsheets(connectionId: string) {
+    try {
+      const response = await this.client.get(`/auth/oauth2/google-sheets/connections/${connectionId}/connected-spreadsheets`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async enableOrderSync(connectionId: string, data: { spreadsheetId: string; sheetName?: string; enableWebhook?: boolean; config?: any }) {
+    try {
+      const response = await this.client.post(`/auth/oauth2/google-sheets/connections/${connectionId}/order-sync/enable`, data);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getOrderSheetConfig(sheetId: string) {
+    try {
+      const response = await this.client.get(`/auth/oauth2/google-sheets/order-sheets/${sheetId}/config`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async updateOrderSheetConfig(sheetId: string, data: { config: any }) {
+    try {
+      const response = await this.client.put(`/auth/oauth2/google-sheets/order-sheets/${sheetId}/config`, data);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+
+
+  async disableOrderSync(connectionId: string, spreadsheetId: string) {
+    try {
+      const response = await this.client.delete(`/auth/oauth2/google-sheets/connections/${connectionId}/order-sheets/${spreadsheetId}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  // CRITICAL FIX: Correct manual sync endpoint
+  async triggerManualSync(connectionId: string, spreadsheetId: string, data?: { startRow?: number; endRow?: number; forceResync?: boolean }) {
+    try {
+      const response = await this.client.post(`/auth/oauth2/google-sheets/connections/${connectionId}/order-sheets/${spreadsheetId}/sync`, data || {});
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getOrderSyncStatus(connectionId: string, spreadsheetId: string) {
+    try {
+      const response = await this.client.get(`/auth/oauth2/google-sheets/connections/${connectionId}/order-sheets/${spreadsheetId}/sync-status`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getConnectionOrderSyncStatus(connectionId: string) {
+    try {
+      const response = await this.client.get(`/auth/oauth2/google-sheets/connections/${connectionId}/order-sync/status`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  // Diagnostic endpoints for troubleshooting sync issues
+  async testSyncPipeline(connectionId: string, spreadsheetId: string, bypassQueue: boolean = false) {
+    try {
+      const response = await this.client.post(`/auth/oauth2/google-sheets/diagnostics/connections/${connectionId}/test-sync-pipeline`, {
+        spreadsheetId,
+        bypassQueue,
+      });
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async getSyncHealth(connectionId: string) {
+    try {
+      const response = await this.client.get(`/auth/oauth2/google-sheets/diagnostics/connections/${connectionId}/sync-health`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
+  async deleteOrderSheet(sheetId: string) {
+    try {
+      const response = await this.client.delete(`/auth/oauth2/google-sheets/order-sheets/${sheetId}`);
+      return response.data;
+    } catch (error) {
+      throw this.handleApiError(error as AxiosError);
+    }
+  }
+
   // Admin endpoints
   async getAdminUsers() {
     try {

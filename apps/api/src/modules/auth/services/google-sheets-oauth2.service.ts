@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { OAuth2Service, OAuth2Config } from './oauth2.service';
@@ -50,6 +50,7 @@ export class GoogleSheetsOAuth2Service {
   private readonly logger = new Logger(GoogleSheetsOAuth2Service.name);
   private readonly googleApiClient: AxiosInstance;
   private readonly sheetsApiClient: AxiosInstance;
+  private readonly driveApiClient: AxiosInstance;
 
   constructor(
     private readonly configService: ConfigService,
@@ -72,6 +73,17 @@ export class GoogleSheetsOAuth2Service {
     // Initialize Google Sheets API client
     this.sheetsApiClient = axios.create({
       baseURL: 'https://sheets.googleapis.com',
+      timeout: 30000,
+      headers: {
+        'User-Agent': 'Confirmelo-Google-Client/1.0',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+    });
+
+    // Initialize Google Drive API client for webhooks
+    this.driveApiClient = axios.create({
+      baseURL: 'https://www.googleapis.com/drive',
       timeout: 30000,
       headers: {
         'User-Agent': 'Confirmelo-Google-Client/1.0',
@@ -634,6 +646,47 @@ export class GoogleSheetsOAuth2Service {
   }
 
   /**
+   * Batch update values in spreadsheet (simpler than batchUpdate for value changes)
+   */
+  async batchUpdateValues(
+    accessToken: string,
+    spreadsheetId: string,
+    valueRanges: any[],
+  ): Promise<any> {
+    try {
+      const response = await this.sheetsApiClient.post(
+        `/v4/spreadsheets/${spreadsheetId}/values:batchUpdate`,
+        {
+          valueInputOption: 'USER_ENTERED',
+          data: valueRanges,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
+
+      this.logger.log('Batch updated values in spreadsheet', {
+        spreadsheetId,
+        rangesCount: valueRanges.length,
+        updatedCells: response.data.totalUpdatedCells || 0,
+      });
+
+      return response.data;
+    } catch (error) {
+      this.logger.error('Failed to batch update values', {
+        error: error.message,
+        spreadsheetId,
+        rangesCount: valueRanges.length,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error(`Failed to batch update values: ${error.message}`);
+    }
+  }
+
+  /**
    * List available spreadsheets for a connection
    */
   async listSpreadsheets(
@@ -802,8 +855,81 @@ export class GoogleSheetsOAuth2Service {
   }
 
   /**
-   * Create a new Orders spreadsheet with predefined template
+   * Setup Google API interceptors for error handling and logging
    */
+  private setupGoogleApiInterceptors(): void {
+    // Request interceptor
+    this.googleApiClient.interceptors.request.use(
+      (config) => {
+        this.logger.debug('Google API Request', {
+          method: config.method,
+          url: config.url,
+          params: config.params,
+        });
+        return config;
+      },
+      (error) => {
+        this.logger.error('Google API Request Error', { error: error.message });
+        return Promise.reject(error);
+      }
+    );
+
+    // Response interceptor
+    this.googleApiClient.interceptors.response.use(
+      (response) => {
+        this.logger.debug('Google API Response', {
+          status: response.status,
+          url: response.config.url,
+        });
+        return response;
+      },
+      (error) => {
+        this.logger.error('Google API Response Error', {
+          status: error.response?.status,
+          url: error.config?.url,
+          error: error.response?.data || error.message,
+        });
+        return Promise.reject(error);
+      }
+    );
+
+    // Setup Sheets API interceptors
+    this.sheetsApiClient.interceptors.request.use(
+      (config) => {
+        this.logger.debug('Google Sheets API Request', {
+          method: config.method,
+          url: config.url,
+        });
+        return config;
+      },
+      (error) => {
+        this.logger.error('Google Sheets API Request Error', { error: error.message });
+        return Promise.reject(error);
+      }
+    );
+
+    this.sheetsApiClient.interceptors.response.use(
+      (response) => {
+        this.logger.debug('Google Sheets API Response', {
+          status: response.status,
+          url: response.config.url,
+        });
+        return response;
+      },
+      (error) => {
+        this.logger.error('Google Sheets API Response Error', {
+          status: error.response?.status,
+          url: error.config?.url,
+          error: error.response?.data || error.message,
+        });
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  /**
+     * Create a new Orders spreadsheet with predefined template
+     */
   async createOrdersSpreadsheet(
     connectionId: string,
     name: string,
@@ -977,11 +1103,11 @@ export class GoogleSheetsOAuth2Service {
     connectionId: string,
     spreadsheetId: string,
   ): Promise<{
-    spreadsheet: GoogleSpreadsheet;
+    spreadsheet: any;
     connection: any;
   }> {
     try {
-      this.logger.log('Connecting to spreadsheet using new SpreadsheetConnectionService', {
+      this.logger.log('Connecting to spreadsheet using SpreadsheetConnectionService', {
         connectionId,
         spreadsheetId,
       });
@@ -1043,177 +1169,149 @@ export class GoogleSheetsOAuth2Service {
       if (error.message.includes('404')) {
         throw new Error(`Spreadsheet not found or not accessible.`);
       } else if (error.message.includes('403')) {
-        throw new Error(`Access denied to spreadsheet.`);
-      } else if (error.message.includes('401')) {
-        throw new Error(`Authentication failed. Please refresh your Google Sheets connection.`);
+        throw new Error(`Permission denied. Please check spreadsheet access.`);
       }
 
-      throw new Error(`Failed to connect to spreadsheet: ${error.message}`);
+      throw error;
     }
   }
 
   /**
-   * Get connected spreadsheets (multi-spreadsheet support)
+   * Disconnect from a specific spreadsheet
    */
-  async getConnectedSpreadsheets(connectionId: string, page?: number, limit?: number): Promise<{
-    spreadsheets: any[];
-    total: number;
-    hasMore: boolean;
-    page: number;
-    limit: number;
-  }> {
+  async disconnectFromSpreadsheet(connectionId: string, spreadsheetId: string): Promise<void> {
     try {
-      this.logger.log('Getting connected spreadsheets from SpreadsheetConnection table', {
-        connectionId,
-        page,
-        limit,
-      });
-
-      // Use the new SpreadsheetConnectionService to get connected spreadsheets
-      const result = await this.spreadsheetConnectionService.listConnectedSpreadsheets(
-        connectionId,
-        false, // includeInactive
-        page || 1,
-        limit || 50,
-      );
-
-      // Transform the data to match the expected format
-      const transformedSpreadsheets = result.spreadsheets.map(spreadsheet => ({
-        id: spreadsheet.spreadsheetId,
-        name: spreadsheet.spreadsheetName,
-        connected_at: spreadsheet.connectedAt?.toISOString(),
-        webViewLink: spreadsheet.webViewLink,
-        sheets: spreadsheet.sheetsData || [],
-        permissions: spreadsheet.permissions,
-        lastSyncAt: spreadsheet.lastSyncAt?.toISOString(),
-        syncCount: spreadsheet.syncCount,
-        hasError: !!spreadsheet.lastErrorAt,
-        lastError: spreadsheet.lastErrorMessage,
-      }));
-
-      this.logger.log('Successfully retrieved connected spreadsheets', {
-        connectionId,
-        total: result.total,
-        returned: transformedSpreadsheets.length,
-        hasMore: result.hasMore,
-      });
-
-      return {
-        spreadsheets: transformedSpreadsheets,
-        total: result.total,
-        hasMore: result.hasMore,
-        page: result.page,
-        limit: result.limit,
-      };
-    } catch (error) {
-      this.logger.error('Failed to get connected spreadsheets', {
-        error: error.message,
-        connectionId,
-      });
-      throw new Error(`Failed to get connected spreadsheets: ${error.message}`);
-    }
-  }
-
-  /**
-   * Disconnect from spreadsheet
-   */
-  async disconnectFromSpreadsheet(connectionId: string, spreadsheetId?: string): Promise<void> {
-    try {
-      this.logger.log('Disconnecting from spreadsheet using SpreadsheetConnectionService', {
+      this.logger.log('Disconnecting from spreadsheet', {
         connectionId,
         spreadsheetId,
       });
 
-      if (spreadsheetId) {
-        // Disconnect from specific spreadsheet using the new service
-        await this.spreadsheetConnectionService.disconnectSpreadsheet(connectionId, spreadsheetId);
-        
-        this.logger.log('Successfully disconnected from specific spreadsheet', {
-          connectionId,
-          spreadsheetId,
-        });
-      } else {
-        // Disconnect from all spreadsheets for this connection
-        const connectedSpreadsheets = await this.spreadsheetConnectionService.listConnectedSpreadsheets(
-          connectionId,
-          false, // includeInactive
-          1,
-          100, // Get all active spreadsheets
-        );
+      await this.spreadsheetConnectionService.disconnectSpreadsheet(connectionId, spreadsheetId);
 
-        // Disconnect from each spreadsheet
-        const disconnectPromises = connectedSpreadsheets.spreadsheets.map(spreadsheet =>
-          this.spreadsheetConnectionService.disconnectSpreadsheet(connectionId, spreadsheet.spreadsheetId)
-        );
-
-        await Promise.all(disconnectPromises);
-
-        this.logger.log('Successfully disconnected from all spreadsheets', {
-          connectionId,
-          disconnectedCount: connectedSpreadsheets.spreadsheets.length,
-        });
-      }
+      this.logger.log('Successfully disconnected from spreadsheet', {
+        connectionId,
+        spreadsheetId,
+      });
     } catch (error) {
       this.logger.error('Failed to disconnect from spreadsheet', {
         error: error.message,
         connectionId,
         spreadsheetId,
       });
-      throw new Error(`Failed to disconnect from spreadsheet: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Get connected spreadsheets for a connection
+   */
+  async getConnectedSpreadsheets(connectionId: string): Promise<{
+    spreadsheets: Array<{
+      id: string;
+      name: string;
+      webViewLink: string;
+      isOrderSyncEnabled: boolean;
+      lastSyncAt?: Date;
+      totalOrders: number;
+    }>;
+  }> {
+    try {
+      this.logger.log('Getting connected spreadsheets', { connectionId });
+
+      const spreadsheetConnections = await this.prismaService.spreadsheetConnection.findMany({
+        where: {
+          connectionId,
+          isActive: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const spreadsheets = await Promise.all(
+        spreadsheetConnections.map(async (conn) => {
+          // Get sync statistics
+          const syncStats = await this.prismaService.syncOperation.aggregate({
+            where: {
+              connectionId,
+              spreadsheetId: conn.spreadsheetId,
+            },
+            _sum: {
+              ordersCreated: true,
+            },
+          });
+
+          return {
+            id: conn.spreadsheetId,
+            name: conn.spreadsheetName,
+            webViewLink: conn.webViewLink || '',
+            isOrderSyncEnabled: conn.isOrderSync || false,
+            lastSyncAt: conn.lastSyncAt,
+            totalOrders: syncStats._sum.ordersCreated || 0,
+          };
+        })
+      );
+
+      return { spreadsheets };
+    } catch (error) {
+      this.logger.error('Failed to get connected spreadsheets', {
+        error: error.message,
+        connectionId,
+      });
+      throw error;
     }
   }
 
   /**
    * List connected Google accounts for multi-account support
    */
-  async listConnectedGoogleAccounts(userId: string, organizationId: string): Promise<any[]> {
+  async listConnectedGoogleAccounts(
+    userId: string,
+    organizationId: string,
+  ): Promise<Array<{
+    connectionId: string;
+    email: string;
+    name: string;
+    picture?: string;
+    isActive: boolean;
+    connectedAt: Date;
+    lastUsedAt?: Date;
+  }>> {
     try {
       const connections = await this.prismaService.platformConnection.findMany({
         where: {
           userId,
           organizationId,
           platformType: PlatformType.GOOGLE_SHEETS,
-          status: ConnectionStatus.ACTIVE,
         },
-        select: {
-          id: true,
-          platformName: true,
-          platformData: true,
-          createdAt: true,
-          lastSyncAt: true,
-          status: true,
-        },
+        orderBy: { createdAt: 'desc' },
       });
 
-      return connections.map(connection => {
-        const platformData = connection.platformData as any;
-        return {
-          connectionId: connection.id,
-          email: platformData?.google_email || 'Unknown',
-          name: platformData?.google_name || 'Unknown',
-          picture: platformData?.google_picture,
-          platformName: connection.platformName,
-          status: connection.status,
-          createdAt: connection.createdAt,
-          lastSyncAt: connection.lastSyncAt,
-          connectedSpreadsheets: platformData?.connected_spreadsheets?.length ||
-            (platformData?.connected_spreadsheet ? 1 : 0),
-        };
-      });
+      return connections.map(conn => ({
+        connectionId: conn.id,
+        email: (conn.platformData as any)?.google_email || 'Unknown',
+        name: (conn.platformData as any)?.google_name || 'Unknown',
+        picture: (conn.platformData as any)?.google_picture,
+        isActive: conn.status === ConnectionStatus.ACTIVE,
+        connectedAt: conn.createdAt,
+        lastUsedAt: conn.lastSyncAt,
+      }));
     } catch (error) {
       this.logger.error('Failed to list connected Google accounts', {
         error: error.message,
         userId,
         organizationId,
       });
-      throw new Error(`Failed to list connected Google accounts: ${error.message}`);
+      throw error;
     }
   }
 
   /**
-   * Switch to specific Google account
+   * Switch to a specific Google account
    */
-  async switchToGoogleAccount(userId: string, organizationId: string, googleEmail: string): Promise<string> {
+  async switchToGoogleAccount(
+    userId: string,
+    organizationId: string,
+    googleEmail: string,
+  ): Promise<string> {
     try {
       const connection = await this.prismaService.platformConnection.findFirst({
         where: {
@@ -1221,21 +1319,22 @@ export class GoogleSheetsOAuth2Service {
           organizationId,
           platformType: PlatformType.GOOGLE_SHEETS,
           status: ConnectionStatus.ACTIVE,
-        },
-        select: {
-          id: true,
-          platformData: true,
+          platformData: {
+            path: ['google_email'],
+            equals: googleEmail,
+          },
         },
       });
 
       if (!connection) {
-        throw new Error('No active Google Sheets connection found');
+        throw new NotFoundException(`Google account with email ${googleEmail} not found`);
       }
 
-      const platformData = connection.platformData as any;
-      if (platformData?.google_email !== googleEmail) {
-        throw new Error('Google account not found in connections');
-      }
+      // Update last used time
+      await this.prismaService.platformConnection.update({
+        where: { id: connection.id },
+        data: { lastSyncAt: new Date() },
+      });
 
       return connection.id;
     } catch (error) {
@@ -1245,23 +1344,57 @@ export class GoogleSheetsOAuth2Service {
         organizationId,
         googleEmail,
       });
-      throw new Error(`Failed to switch to Google account: ${error.message}`);
+      throw error;
     }
   }
 
   /**
-   * Refresh Google Sheets connection token
+   * Get OAuth2 client for webhook management
+   */
+  async getOAuth2Client(userId: string): Promise<any> {
+    try {
+      const connection = await this.prismaService.platformConnection.findFirst({
+        where: {
+          userId,
+          platformType: PlatformType.GOOGLE_SHEETS,
+          status: ConnectionStatus.ACTIVE,
+        },
+      });
+
+      if (!connection) {
+        throw new NotFoundException(`No active Google Sheets connection found for user: ${userId}`);
+      }
+
+      // Return a mock OAuth2 client for now - this would need proper implementation
+      return {
+        credentials: {
+          access_token: await this.oauth2Service.getAccessToken(connection.id),
+        },
+      };
+    } catch (error) {
+      this.logger.error('Failed to get OAuth2 client', {
+        error: error.message,
+        userId,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Refresh Google token for a connection
    */
   async refreshGoogleToken(connectionId: string): Promise<void> {
     try {
       this.logger.log('Refreshing Google token', { connectionId });
 
+      // Get Google OAuth2 configuration
       const config = await this.oauth2ConfigService.getConfig(PlatformType.GOOGLE_SHEETS);
       if (!config) {
-        throw new Error('Google Sheets OAuth2 configuration not found');
+        throw new BadRequestException('Google Sheets OAuth2 configuration not found');
       }
 
-      await this.oauth2Service.refreshAccessToken(connectionId, config);
+      // Use the OAuth2Service to refresh the token
+      await this.oauth2Service.validateAndRefreshToken(connectionId);
 
       this.logger.log('Successfully refreshed Google token', { connectionId });
     } catch (error) {
@@ -1269,12 +1402,12 @@ export class GoogleSheetsOAuth2Service {
         error: error.message,
         connectionId,
       });
-      throw error;
+      throw new Error(`Refresh failed: ${error.message}`);
     }
   }
 
   /**
-   * Test current OAuth2 scopes and permissions
+   * Test current scopes for a connection
    */
   async testCurrentScopes(connectionId: string): Promise<{
     scopes: string[];
@@ -1286,6 +1419,8 @@ export class GoogleSheetsOAuth2Service {
     details: any;
   }> {
     try {
+      this.logger.log('Testing current scopes', { connectionId });
+
       const accessToken = await this.oauth2Service.getAccessToken(connectionId);
 
       const results = {
@@ -1377,52 +1512,85 @@ export class GoogleSheetsOAuth2Service {
   }
 
   /**
-   * Setup Google API client interceptors
+   * Set up webhook for spreadsheet changes
    */
-  private setupGoogleApiInterceptors(): void {
-    // Setup interceptors for general Google API client
-    this.setupInterceptorsForClient(this.googleApiClient, 'Google API');
+  async setupWebhook(
+    accessToken: string,
+    spreadsheetId: string,
+    webhookUrl: string,
+  ): Promise<any> {
+    try {
+      const response = await this.driveApiClient.post(
+        `/v3/files/${spreadsheetId}/watch`,
+        {
+          id: `webhook-${spreadsheetId}-${Date.now()}`,
+          type: 'web_hook',
+          address: webhookUrl,
+          payload: true,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
 
-    // Setup interceptors for Sheets API client
-    this.setupInterceptorsForClient(this.sheetsApiClient, 'Sheets API');
+      this.logger.log('Successfully set up webhook for spreadsheet', {
+        spreadsheetId,
+        webhookUrl,
+        subscriptionId: response.data.id,
+        resourceId: response.data.resourceId,
+        expiration: response.data.expiration,
+      });
+
+      return response.data;
+    } catch (error) {
+      this.logger.error('Failed to set up webhook', {
+        error: error.message,
+        spreadsheetId,
+        webhookUrl,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error(`Failed to set up webhook: ${error.message}`);
+    }
   }
 
-  private setupInterceptorsForClient(client: AxiosInstance, clientName: string): void {
-    // Request interceptor
-    client.interceptors.request.use(
-      (config) => {
-        this.logger.debug(`${clientName} Request`, {
-          method: config.method?.toUpperCase(),
-          url: config.url,
-          params: config.params,
-        });
-        return config;
-      },
-      (error) => {
-        this.logger.error(`${clientName} Request Error`, { error: error.message });
-        return Promise.reject(error);
-      },
-    );
+  /**
+   * Remove webhook subscription
+   */
+  async removeWebhook(
+    accessToken: string,
+    subscriptionId: string,
+    resourceId: string,
+  ): Promise<void> {
+    try {
+      await this.driveApiClient.post(
+        `/v3/channels/stop`,
+        {
+          id: subscriptionId,
+          resourceId: resourceId,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+      );
 
-    // Response interceptor
-    client.interceptors.response.use(
-      (response) => {
-        this.logger.debug(`${clientName} Response`, {
-          status: response.status,
-          url: response.config.url,
-          dataKeys: Object.keys(response.data || {}),
-        });
-        return response;
-      },
-      (error) => {
-        this.logger.error(`${clientName} Response Error`, {
-          status: error.response?.status,
-          url: error.config?.url,
-          error: error.message,
-          data: error.response?.data,
-        });
-        return Promise.reject(error);
-      },
-    );
+      this.logger.log('Successfully removed webhook subscription', {
+        subscriptionId,
+        resourceId,
+      });
+    } catch (error) {
+      this.logger.error('Failed to remove webhook', {
+        error: error.message,
+        subscriptionId,
+        resourceId,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+      throw new Error(`Failed to remove webhook: ${error.message}`);
+    }
   }
 }

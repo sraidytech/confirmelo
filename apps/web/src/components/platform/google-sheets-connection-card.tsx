@@ -20,7 +20,9 @@ import {
   ExternalLink,
   FileSpreadsheet,
   Plus,
-  Unlink
+  Unlink,
+  Settings,
+  Zap
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { SpreadsheetSelector } from './spreadsheet-selector';
@@ -61,6 +63,7 @@ export function GoogleSheetsConnectionCard({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isLoadingSpreadsheet, setIsLoadingSpreadsheet] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState<string | null>(null);
   const [showSpreadsheetSelector, setShowSpreadsheetSelector] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [connectedSpreadsheets, setConnectedSpreadsheets] = useState<ConnectedSpreadsheet[]>([]);
@@ -78,6 +81,7 @@ export function GoogleSheetsConnectionCard({
 
     } catch (error) {
       // Ignore error if no spreadsheets are connected
+      console.error('Failed to load connected spreadsheets:', error);
       setConnectedSpreadsheets([]);
     }
   };
@@ -219,6 +223,129 @@ export function GoogleSheetsConnectionCard({
     }
   };
 
+  const handleSyncSpreadsheet = async (spreadsheetId: string) => {
+    setIsSyncing(spreadsheetId);
+    try {
+      const result = await api.triggerManualSync(connection.id, spreadsheetId);
+      
+      toast({
+        title: 'Sync Started',
+        description: `Order sync has been triggered for this spreadsheet. Operation ID: ${result.operationId}`,
+      });
+      
+      // Reload spreadsheets to show updated sync info
+      setTimeout(() => {
+        loadConnectedSpreadsheets();
+      }, 2000);
+    } catch (error: any) {
+      console.error('Manual sync failed:', error);
+      toast({
+        title: 'Sync Failed',
+        description: error.message || 'Could not trigger manual sync.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSyncing(null);
+    }
+  };
+
+  const handleSyncAllSpreadsheets = async () => {
+    if (connectedSpreadsheets.length === 0) {
+      toast({
+        title: 'No Spreadsheets',
+        description: 'No spreadsheets are connected to sync.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSyncing('all');
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      for (const spreadsheet of connectedSpreadsheets) {
+        try {
+          await api.triggerManualSync(connection.id, spreadsheet.id);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to sync spreadsheet ${spreadsheet.id}:`, error);
+          errorCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toast({
+          title: 'Sync Started',
+          description: `Started sync for ${successCount} spreadsheet(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}.`,
+        });
+      } else {
+        toast({
+          title: 'Sync Failed',
+          description: 'Failed to start sync for any spreadsheets.',
+          variant: 'destructive',
+        });
+      }
+
+      // Reload spreadsheets to show updated sync info
+      setTimeout(() => {
+        loadConnectedSpreadsheets();
+      }, 2000);
+    } finally {
+      setIsSyncing(null);
+    }
+  };
+
+  const handleEnableAutoSync = async () => {
+    if (connectedSpreadsheets.length === 0) {
+      toast({
+        title: 'No Spreadsheets',
+        description: 'No spreadsheets are connected to enable sync for.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsSyncing('auto');
+    let successCount = 0;
+    let errorCount = 0;
+
+    try {
+      for (const spreadsheet of connectedSpreadsheets) {
+        try {
+          await api.enableOrderSync(connection.id, {
+            spreadsheetId: spreadsheet.id,
+            enableWebhook: true,
+          });
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to enable sync for spreadsheet ${spreadsheet.id}:`, error);
+          errorCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        toast({
+          title: 'Auto Sync Enabled',
+          description: `Enabled order sync for ${successCount} spreadsheet(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}.`,
+        });
+      } else {
+        toast({
+          title: 'Enable Sync Failed',
+          description: 'Failed to enable sync for any spreadsheets.',
+          variant: 'destructive',
+        });
+      }
+
+      // Reload spreadsheets to show updated sync info
+      setTimeout(() => {
+        loadConnectedSpreadsheets();
+      }, 2000);
+    } finally {
+      setIsSyncing(null);
+    }
+  };
+
   const handleDisconnectSpreadsheet = async (spreadsheetId: string) => {
     if (!confirm('Are you sure you want to disconnect from this spreadsheet?')) {
       return;
@@ -266,7 +393,7 @@ export function GoogleSheetsConnectionCard({
               <div className="text-2xl">📊</div>
               <div>
                 <CardTitle className="text-lg">{connection.platformName}</CardTitle>
-                <CardDescription className="flex items-center space-x-2">
+                <div className="text-sm text-muted-foreground flex items-center space-x-2">
                   <span>Google Sheets</span>
                   <Badge 
                     variant="outline" 
@@ -275,7 +402,7 @@ export function GoogleSheetsConnectionCard({
                     {getStatusIcon(connection.status)}
                     <span>{connection.status}</span>
                   </Badge>
-                </CardDescription>
+                </div>
               </div>
             </div>
             
@@ -289,6 +416,7 @@ export function GoogleSheetsConnectionCard({
                         size="sm"
                         onClick={handleRefreshConnection}
                         disabled={isRefreshing}
+                        aria-label="Refresh tokens"
                       >
                         {isRefreshing ? (
                           <LoadingSpinner className="h-4 w-4" />
@@ -311,6 +439,7 @@ export function GoogleSheetsConnectionCard({
                         size="sm"
                         onClick={handleTestConnection}
                         disabled={isTesting}
+                        aria-label="Test"
                       >
                         {isTesting ? (
                           <LoadingSpinner className="h-4 w-4" />
@@ -333,6 +462,7 @@ export function GoogleSheetsConnectionCard({
                       onClick={handleDeleteConnection}
                       disabled={isDeleting}
                       className="text-red-600 hover:text-red-700"
+                      aria-label="Revoke"
                     >
                       {isDeleting ? (
                         <LoadingSpinner className="h-4 w-4" />
@@ -351,6 +481,49 @@ export function GoogleSheetsConnectionCard({
         </CardHeader>
 
         <CardContent className="space-y-4">
+          {/* Order Sync Management */}
+          {connection.status === ConnectionStatus.ACTIVE && (
+            <div className="border rounded-lg p-4 bg-blue-50 border-blue-200">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center space-x-2">
+                  <Zap className="h-4 w-4 text-blue-600" />
+                  <h4 className="font-medium text-blue-900">Order Sync</h4>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleSyncAllSpreadsheets}
+                    disabled={isSyncing !== null || connectedSpreadsheets.length === 0}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {isSyncing ? (
+                      <LoadingSpinner className="h-4 w-4 mr-1" />
+                    ) : (
+                      <Zap className="h-4 w-4 mr-1" />
+                    )}
+                    Sync All
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleEnableAutoSync}
+                    disabled={isSyncing !== null || connectedSpreadsheets.length === 0}
+                    className="border-green-300 text-green-700 hover:bg-green-100"
+                  >
+                    <CheckCircle className="h-4 w-4 mr-1" />
+                    Enable Auto Sync
+                  </Button>
+                </div>
+              </div>
+              
+              <p className="text-sm text-blue-700">
+                Sync orders from all connected spreadsheets or manage individual sheets
+              </p>
+            </div>
+          )}
+
           {/* Connected Spreadsheets Section */}
           <div className="border rounded-lg p-4 bg-gray-50">
             <div className="flex items-center justify-between mb-3">
@@ -406,6 +579,20 @@ export function GoogleSheetsConnectionCard({
                         )}
                       </div>
                       <div className="flex items-center space-x-2">
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => handleSyncSpreadsheet(spreadsheet.id)}
+                          disabled={isSyncing === spreadsheet.id}
+                          title="Sync Orders Now"
+                          className="bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          {isSyncing === spreadsheet.id ? (
+                            <LoadingSpinner className="h-4 w-4" />
+                          ) : (
+                            <Zap className="h-4 w-4" />
+                          )}
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"

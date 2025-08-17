@@ -6,7 +6,17 @@ import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
 // Mock dependencies
-jest.mock('@/lib/api');
+jest.mock('@/lib/api', () => ({
+  api: {
+    get: jest.fn(),
+    post: jest.fn(),
+    put: jest.fn(),
+    delete: jest.fn(),
+    refreshPlatformConnection: jest.fn(),
+    testPlatformConnection: jest.fn(),
+    revokePlatformConnection: jest.fn(),
+  },
+}));
 jest.mock('@/hooks/use-toast');
 jest.mock('../spreadsheet-selector', () => ({
   SpreadsheetSelector: ({ onSpreadsheetSelected, onClose }: any) => (
@@ -75,9 +85,20 @@ describe('GoogleSheetsConnectionCard', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (api.get as jest.Mock).mockResolvedValue({
+    
+    // Mock all API methods
+    (api.get as jest.Mock) = jest.fn().mockResolvedValue({
       data: { spreadsheets: mockConnectedSpreadsheets },
     });
+    (api.post as jest.Mock) = jest.fn().mockResolvedValue({});
+    (api.put as jest.Mock) = jest.fn().mockResolvedValue({});
+    (api.delete as jest.Mock) = jest.fn().mockResolvedValue({});
+    (api.refreshPlatformConnection as jest.Mock) = jest.fn().mockResolvedValue({});
+    (api.testPlatformConnection as jest.Mock) = jest.fn().mockResolvedValue({
+      success: true,
+      details: { platform: 'Google Sheets' },
+    });
+    (api.revokePlatformConnection as jest.Mock) = jest.fn().mockResolvedValue({});
   });
 
   const renderComponent = (connection = mockConnection) => {

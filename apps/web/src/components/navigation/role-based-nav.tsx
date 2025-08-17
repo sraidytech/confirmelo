@@ -18,7 +18,7 @@ import {
 
 const iconMap = {
   '/dashboard': LayoutDashboard,
-  '/orders': ShoppingCart,
+  '/dashboard/orders': ShoppingCart,
   '/teams': Users,
   '/dashboard/admin/users': UserCheck,
   '/dashboard/platform-connections': Link2,

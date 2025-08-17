@@ -75,7 +75,7 @@ export class OAuth2Controller {
     status: 403,
     description: 'Insufficient permissions',
   })
-  @Roles(UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN)
   async initiateOAuth2(
     @Body() dto: InitiateOAuth2Dto,
     @CurrentUser() user: any,
@@ -153,7 +153,7 @@ export class OAuth2Controller {
     status: 401,
     description: 'Authorization failed or expired',
   })
-  @Roles(UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN)
   async completeOAuth2(
     @Body() dto: CompleteOAuth2Dto,
     @CurrentUser() user: any,
@@ -235,7 +235,7 @@ export class OAuth2Controller {
     description: 'Connections retrieved successfully',
     type: ConnectionListResponseDto,
   })
-  @Roles(UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN, UserRole.CLIENT_USER)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN, UserRole.CLIENT_USER)
   async listConnections(
     @Query() query: ListConnectionsQueryDto,
     @CurrentUser() user: any,
@@ -308,7 +308,7 @@ export class OAuth2Controller {
     status: 403,
     description: 'Access denied to this connection',
   })
-  @Roles(UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN, UserRole.CLIENT_USER)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN, UserRole.CLIENT_USER)
   async getConnection(
     @Param('id') id: string,
     @CurrentUser() user: any,
@@ -368,7 +368,7 @@ export class OAuth2Controller {
     status: 401,
     description: 'Token refresh failed',
   })
-  @Roles(UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN)
   async refreshToken(
     @Param('id') id: string,
     @CurrentUser() user: any,
@@ -436,7 +436,7 @@ export class OAuth2Controller {
     status: 404,
     description: 'Connection not found',
   })
-  @Roles(UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN, UserRole.CLIENT_USER)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN, UserRole.CLIENT_USER)
   async testConnection(
     @Param('id') id: string,
     @CurrentUser() user: any,
@@ -494,7 +494,7 @@ export class OAuth2Controller {
     status: 404,
     description: 'Connection not found',
   })
-  @Roles(UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN)
+  @Roles(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.TEAM_LEADER, UserRole.CLIENT_ADMIN)
   async revokeConnection(
     @Param('id') id: string,
     @CurrentUser() user: any,

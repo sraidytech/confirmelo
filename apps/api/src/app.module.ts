@@ -11,6 +11,9 @@ import { RequestSizeMiddleware } from './common/validation/middleware/request-si
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { OrdersModule } from './modules/orders/orders.module';
+import { QueueModule } from './modules/queue/queue.module';
+import { QueueProcessorsModule } from './modules/queue/queue-processors.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -24,9 +27,12 @@ import { HealthController } from './health/health.controller';
     GuardsModule,
     ExceptionsModule,
     ValidationModule,
+    QueueModule, // Must be imported before AuthModule
     AuthModule,
     UsersModule,
     AdminModule,
+    OrdersModule,
+    QueueProcessorsModule, // Import processors after AuthModule
   ],
   controllers: [HealthController],
 })

@@ -194,6 +194,8 @@ model PlatformConnection {
   
   // Relationships
   spreadsheetConnections SpreadsheetConnection[]
+  webhookSubscriptions  WebhookSubscription[]
+  syncOperations        SyncOperation[]
   
   @@unique([userId, platformType, platformStoreId])
   @@index([organizationId])
@@ -228,6 +230,12 @@ model SpreadsheetConnection {
   lastErrorAt           DateTime?
   lastErrorMessage      String?
   
+  // Order sync specific fields
+  isOrderSync           Boolean         @default(false)
+  orderSyncConfig       Json?           // Order sync configuration
+  lastSyncRow           Int             @default(1)
+  webhookSubscriptionId String?
+  
   // Timestamps
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
@@ -237,6 +245,59 @@ model SpreadsheetConnection {
   @@index([spreadsheetId])
   @@index([isActive])
   @@index([lastAccessedAt])
+}
+
+model WebhookSubscription {
+  id                    String          @id @default(cuid())
+  connectionId          String
+  connection            PlatformConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  
+  // Google Sheets webhook details
+  spreadsheetId         String
+  subscriptionId        String          // Google's subscription ID
+  resourceId            String          // Google's resource ID
+  expiration            DateTime?
+  isActive              Boolean         @default(true)
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  
+  @@index([connectionId])
+  @@index([spreadsheetId])
+  @@index([subscriptionId])
+  @@index([isActive])
+}
+
+model SyncOperation {
+  id                    String          @id @default(cuid())
+  connectionId          String
+  connection            PlatformConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  
+  // Sync operation details
+  spreadsheetId         String
+  operationType         String          // 'webhook', 'manual', 'polling'
+  status                String          // 'pending', 'processing', 'completed', 'failed'
+  
+  // Results
+  ordersProcessed       Int             @default(0)
+  ordersCreated         Int             @default(0)
+  ordersSkipped         Int             @default(0)
+  errorCount            Int             @default(0)
+  errorDetails          Json?
+  
+  // Timing
+  startedAt             DateTime        @default(now())
+  completedAt           DateTime?
+  
+  // Timestamps
+  createdAt             DateTime        @default(now())
+  
+  @@index([connectionId])
+  @@index([spreadsheetId])
+  @@index([status])
+  @@index([operationType])
+  @@index([startedAt])
 }
 
 // ==================== ORGANIZATION & TEAM MODELS ====================
@@ -590,6 +651,10 @@ model Order {
   source                String?         // google_sheets, api, manual, etc.
   importedAt            DateTime?
   
+  // Google Sheets specific tracking
+  sheetRowNumber        Int?
+  sheetSpreadsheetId    String?
+  
   // Timestamps
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
@@ -601,6 +666,9 @@ model Order {
   @@index([assignedAgentId])
   @@index([status])
   @@index([orderDate])
+  @@index([sheetSpreadsheetId])
+  @@index([sheetRowNumber])
+  @@index([sheetSpreadsheetId, sheetRowNumber])
 }
 
 model OrderItem {

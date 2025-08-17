@@ -3,6 +3,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { GoogleSheetsOAuth2Controller } from '../controllers/google-sheets-oauth2.controller';
 import { GoogleSheetsOAuth2Service } from '../services/google-sheets-oauth2.service';
+import { GoogleSheetsOrderService } from '../services/google-sheets-order.service';
 import { PrismaService } from '../../../common/database/prisma.service';
 import { AuthorizationService } from '../../../common/services/authorization.service';
 import { UserRole, PlatformType, ConnectionStatus } from '@prisma/client';
@@ -10,6 +11,7 @@ import { UserRole, PlatformType, ConnectionStatus } from '@prisma/client';
 describe('GoogleSheetsOAuth2Controller', () => {
   let controller: GoogleSheetsOAuth2Controller;
   let googleSheetsService: any;
+  let googleSheetsOrderService: any;
   let prismaService: any;
 
   const mockUser = {
@@ -100,9 +102,23 @@ describe('GoogleSheetsOAuth2Controller', () => {
             updateSpreadsheetValues: jest.fn(),
             appendSpreadsheetValues: jest.fn(),
             batchUpdateSpreadsheet: jest.fn(),
+            getConnectedSpreadsheets: jest.fn(),
+            listConnectedGoogleAccounts: jest.fn(),
+            switchToGoogleAccount: jest.fn(),
             oauth2Service: {
               getAccessToken: jest.fn(),
             },
+          },
+        },
+        {
+          provide: GoogleSheetsOrderService,
+          useValue: {
+            createOrderSheet: jest.fn(),
+            enableOrderSync: jest.fn(),
+            getOrderSheetInfo: jest.fn(),
+            updateOrderSyncConfig: jest.fn(),
+            triggerManualSync: jest.fn(),
+            getSyncStatus: jest.fn(),
           },
         },
         {
@@ -135,6 +151,7 @@ describe('GoogleSheetsOAuth2Controller', () => {
 
     controller = module.get<GoogleSheetsOAuth2Controller>(GoogleSheetsOAuth2Controller);
     googleSheetsService = module.get(GoogleSheetsOAuth2Service);
+    googleSheetsOrderService = module.get(GoogleSheetsOrderService);
     prismaService = module.get(PrismaService);
   });
 
@@ -899,6 +916,293 @@ describe('GoogleSheetsOAuth2Controller', () => {
           mockUser,
         ),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  // ===== ORDER SHEET FUNCTIONALITY TESTS =====
+
+  describe('createOrderSheet', () => {
+    it('should create order sheet successfully', async () => {
+      // Arrange
+      const dto = {
+        name: 'Test Order Sheet',
+        config: {
+          columnMapping: {
+            orderId: 'A',
+            customerName: 'B',
+            phone: 'C',
+          },
+          headerRow: 1,
+          dataStartRow: 2,
+        },
+      };
+      const expectedResult = {
+        spreadsheetId: 'spreadsheet-123',
+        spreadsheetName: 'Test Order Sheet',
+        webViewLink: 'https://docs.google.com/spreadsheets/d/spreadsheet-123',
+        connectionId: 'connection-123',
+        isOrderSyncEnabled: true,
+        lastSyncRow: 1,
+        totalOrders: 0,
+      };
+      
+      prismaService.platformConnection.findFirst.mockResolvedValue(mockConnection);
+      googleSheetsOrderService.createOrderSheet.mockResolvedValue(expectedResult);
+
+      // Act
+      const result = await controller.createOrderSheet('connection-123', dto, mockUser);
+
+      // Assert
+      expect(result).toEqual(expectedResult);
+      expect(googleSheetsOrderService.createOrderSheet).toHaveBeenCalledWith('connection-123', dto);
+    });
+
+    it('should handle connection not found', async () => {
+      // Arrange
+      const dto = { name: 'Test Order Sheet' };
+      prismaService.platformConnection.findFirst.mockResolvedValue(null);
+
+      // Act & Assert
+      await expect(
+        controller.createOrderSheet('connection-123', dto, mockUser),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('enableOrderSync', () => {
+    it('should enable order sync successfully', async () => {
+      // Arrange
+      const dto = {
+        spreadsheetId: 'spreadsheet-123',
+        sheetName: 'Orders',
+        enableWebhook: true,
+      };
+      const expectedResult = {
+        spreadsheetId: 'spreadsheet-123',
+        spreadsheetName: 'Test Spreadsheet',
+        webViewLink: 'https://docs.google.com/spreadsheets/d/spreadsheet-123',
+        connectionId: 'connection-123',
+        isOrderSyncEnabled: true,
+        webhookSubscriptionId: 'webhook-123',
+        lastSyncRow: 1,
+        totalOrders: 0,
+      };
+      
+      prismaService.platformConnection.findFirst.mockResolvedValue(mockConnection);
+      googleSheetsOrderService.enableOrderSync.mockResolvedValue(expectedResult);
+
+      // Act
+      const result = await controller.enableOrderSync('connection-123', dto, mockUser);
+
+      // Assert
+      expect(result).toEqual(expectedResult);
+      expect(googleSheetsOrderService.enableOrderSync).toHaveBeenCalledWith('connection-123', dto);
+    });
+  });
+
+  describe('listOrderSheets', () => {
+    it('should list order sheets successfully', async () => {
+      // Arrange
+      const mockOrderSheets = [
+        {
+          spreadsheetId: 'spreadsheet-123',
+          spreadsheetName: 'Order Sheet 1',
+          webViewLink: 'https://docs.google.com/spreadsheets/d/spreadsheet-123',
+          isOrderSyncEnabled: true,
+          lastSyncAt: new Date(),
+          totalOrders: 5,
+        },
+      ];
+      
+      prismaService.platformConnection.findFirst.mockResolvedValue(mockConnection);
+      prismaService.spreadsheetConnection.findMany.mockResolvedValue([
+        {
+          spreadsheetId: 'spreadsheet-123',
+          spreadsheetName: 'Order Sheet 1',
+          webViewLink: 'https://docs.google.com/spreadsheets/d/spreadsheet-123',
+          isOrderSync: true,
+          lastSyncAt: new Date(),
+        },
+      ]);
+      prismaService.syncOperation.aggregate.mockResolvedValue({
+        _sum: { ordersCreated: 5 },
+      });
+
+      // Act
+      const result = await controller.listOrderSheets('connection-123', mockUser);
+
+      // Assert
+      expect(result).toEqual({
+        orderSheets: mockOrderSheets,
+        count: 1,
+      });
+    });
+  });
+
+  describe('getOrderSheetInfo', () => {
+    it('should get order sheet info successfully', async () => {
+      // Arrange
+      const expectedResult = {
+        spreadsheetId: 'spreadsheet-123',
+        spreadsheetName: 'Test Order Sheet',
+        webViewLink: 'https://docs.google.com/spreadsheets/d/spreadsheet-123',
+        connectionId: 'connection-123',
+        isOrderSyncEnabled: true,
+        webhookSubscriptionId: 'webhook-123',
+        lastSyncAt: new Date(),
+        lastSyncRow: 5,
+        totalOrders: 10,
+        orderSyncConfig: {
+          columnMapping: { orderId: 'A', customerName: 'B' },
+          headerRow: 1,
+          dataStartRow: 2,
+        },
+      };
+      
+      prismaService.platformConnection.findFirst.mockResolvedValue(mockConnection);
+      googleSheetsOrderService.getOrderSheetInfo.mockResolvedValue(expectedResult);
+
+      // Act
+      const result = await controller.getOrderSheetInfo(
+        'connection-123',
+        'spreadsheet-123',
+        mockUser,
+      );
+
+      // Assert
+      expect(result).toEqual(expectedResult);
+      expect(googleSheetsOrderService.getOrderSheetInfo).toHaveBeenCalledWith(
+        'connection-123',
+        'spreadsheet-123',
+      );
+    });
+  });
+
+  describe('triggerManualSync', () => {
+    it('should trigger manual sync successfully', async () => {
+      // Arrange
+      const dto = {
+        startRow: 2,
+        endRow: 10,
+        forceResync: false,
+      };
+      const expectedResult = {
+        operationId: 'operation-123',
+        status: 'pending',
+        ordersProcessed: 0,
+        ordersCreated: 0,
+        ordersSkipped: 0,
+        errorCount: 0,
+        startedAt: new Date(),
+      };
+      
+      prismaService.platformConnection.findFirst.mockResolvedValue(mockConnection);
+      googleSheetsOrderService.triggerManualSync.mockResolvedValue(expectedResult);
+
+      // Act
+      const result = await controller.triggerManualSync(
+        'connection-123',
+        'spreadsheet-123',
+        dto,
+        mockUser,
+      );
+
+      // Assert
+      expect(result).toEqual(expectedResult);
+      expect(googleSheetsOrderService.triggerManualSync).toHaveBeenCalledWith(
+        'connection-123',
+        'spreadsheet-123',
+        dto,
+      );
+    });
+  });
+
+  describe('getSyncStatus', () => {
+    it('should get sync status successfully', async () => {
+      // Arrange
+      const expectedResult = {
+        connectionId: 'connection-123',
+        spreadsheetId: 'spreadsheet-123',
+        isEnabled: true,
+        lastSyncAt: new Date(),
+        lastSyncResult: 'success' as const,
+        totalSyncs: 5,
+        totalOrdersCreated: 25,
+        totalOrdersSkipped: 2,
+        totalErrors: 0,
+        webhookStatus: 'active' as const,
+        webhookExpiration: new Date(Date.now() + 86400000),
+        recentErrors: [],
+      };
+      
+      prismaService.platformConnection.findFirst.mockResolvedValue(mockConnection);
+      googleSheetsOrderService.getSyncStatus.mockResolvedValue(expectedResult);
+
+      // Act
+      const result = await controller.getSyncStatus(
+        'connection-123',
+        'spreadsheet-123',
+        mockUser,
+      );
+
+      // Assert
+      expect(result).toEqual(expectedResult);
+      expect(googleSheetsOrderService.getSyncStatus).toHaveBeenCalledWith(
+        'connection-123',
+        'spreadsheet-123',
+      );
+    });
+  });
+
+  describe('getConnectionHealth', () => {
+    it('should get connection health successfully', async () => {
+      // Arrange
+      const testResult = { success: true };
+      const mockHealthResult = {
+        connectionId: 'connection-123',
+        status: 'healthy' as const,
+        lastChecked: expect.any(Date),
+        oauth2Status: {
+          isValid: true,
+          tokenExpiry: mockConnection.tokenExpiresAt,
+          scopes: mockConnection.scopes,
+        },
+        orderSyncCapability: {
+          isEnabled: true,
+          activeSheets: 2,
+          lastSyncAt: new Date(),
+          webhookStatus: 'active' as const,
+        },
+        recentErrors: [],
+        recommendations: [],
+      };
+      
+      prismaService.platformConnection.findFirst.mockResolvedValue(mockConnection);
+      googleSheetsService.testGoogleSheetsConnection.mockResolvedValue(testResult);
+      prismaService.spreadsheetConnection.count.mockResolvedValue(2);
+      prismaService.syncOperation.findFirst.mockResolvedValue({
+        startedAt: new Date(),
+      });
+      prismaService.webhookSubscription.count.mockResolvedValue(1);
+      prismaService.syncOperation.findMany.mockResolvedValue([]);
+
+      // Act
+      const result = await controller.getConnectionHealth('connection-123', mockUser);
+
+      // Assert
+      expect(result).toMatchObject({
+        connectionId: 'connection-123',
+        status: 'healthy',
+        oauth2Status: {
+          isValid: true,
+          scopes: mockConnection.scopes,
+        },
+        orderSyncCapability: {
+          isEnabled: true,
+          activeSheets: 2,
+          webhookStatus: 'active',
+        },
+      });
     });
   });
 });
